@@ -1,9 +1,10 @@
 # hop
 
-Bookmarks for the directories you work in. `tab` walks the categories, arrows
-pick, `enter` lands you there. Type to filter if you would rather.
+Bookmarks for the directories you work in. Categories down the left, bookmarks
+in the main area. `tab` walks the categories, arrows pick, `enter` lands you
+there. Type to filter if you would rather.
 
-![hop listing bookmarked directories, filtered by typing, with a git status preview of the selected repo](docs/demo.png)
+![hop: a category column on the left listing repos, configs and notes with counts, and the bookmarks for the active category in the main area](docs/demo.png)
 
 `enter` puts your shell in that directory, and activates the project's
 virtualenv if it finds one. Other keys act on it in place: open in `$EDITOR`,
@@ -13,11 +14,18 @@ Bash and `fzf`. No runtime, no build. Works over SSH.
 
 ## Narrow terminals
 
-The layout adapts. Below 90 columns the preview hides (`^o` brings it back);
-below 46 the path column goes. Switching category is one key rather than a
-typed query, which is what makes it usable on a phone or in a thin split.
+The layout adapts to width, dropping the widest thing first:
 
-![the same picker at 44 columns: no preview, no path column, categories still one key away](docs/demo-narrow.png)
+| Width | Layout |
+|---|---|
+| 76+ | category column, bookmark names and paths |
+| 56-75 | category column, names only |
+| under 56 | column collapses to a one-line strip, names only |
+
+Switching category is one key rather than a typed query, which is what makes
+it usable on a phone or in a thin split. `^o` toggles the column.
+
+![the same picker at 44 columns: the category column collapsed to a single line of hotkeys, bookmark names only](docs/demo-narrow.png)
 
 ## Install
 

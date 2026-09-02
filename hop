@@ -104,11 +104,12 @@ rows_for() {
         if (all=="0" && system("test -e \"" pa[i] "\"")!=0) continue
         if (only != "" && cat[i] != only) continue
         mark = (pn[i]=="1" ? "*" : " ")
+        pre  = (only=="" ? sprintf("\033[2m%-*s\033[0m ", cw, cat[i]"/") : "")
         if (showpath=="1") {
           short=pa[i]; sub("^" home, "~", short)
-          printf "%s\033[2m%-*s\033[0m %-*s \033[2m%s\033[0m\t%s\n", mark, cw, cat[i]"/", nw, nm[i], short, pa[i]
+          printf "%s%s%-*s \033[2m%s\033[0m\t%s\n", mark, pre, nw, nm[i], short, pa[i]
         } else
-          printf "%s\033[2m%-*s\033[0m %s\t%s\n", mark, cw, cat[i]"/", nm[i], pa[i]
+          printf "%s%s%s\t%s\n", mark, pre, nm[i], pa[i]
       }
     }'
 }
@@ -128,6 +129,38 @@ if [ "${1:-}" = "--cycle" ]; then
   idx=$(( idx % (n + 1) )); [ "$idx" -lt 0 ] && idx=$(( idx + n + 1 ))
   printf '%s' "$idx" > "$state"
   if [ "$idx" -eq 0 ]; then rows_for ""; else rows_for "${cats[idx-1]}"; fi
+  exit 0
+fi
+
+# --- category pane (invoked by fzf as a subprocess) -------------------------
+# fzf gives one list and one side pane. The pane is not interactive, but the
+# interaction here is hotkeys, not arrowing into it -- so it renders the
+# category column, with the active one marked, plus a compact status for the
+# selected row underneath.
+if [ "${1:-}" = "--pane" ]; then
+  sel="${2:-}"; state="${3:-}"; w="${HOP_PANEW:-20}"
+  mapfile -t cats < <(categories)
+  idx=0; [ -s "$state" ] && idx="$(cat "$state")"
+  printf '\033[1mCATEGORIES\033[0m\n'
+  i=0
+  for c in "${cats[@]}"; do
+    i=$(( i + 1 ))
+    n=$(parse | awk -F'\t' -v c="$c" '$2==c{n++} END{print n+0}')
+    if [ "$i" -eq "$idx" ]; then printf '\033[7m %d %-*s %2d \033[0m\n' "$i" $(( w - 6 )) "$c" "$n"
+    else                         printf ' %d %-*s \033[2m%2d\033[0m\n'  "$i" $(( w - 6 )) "$c" "$n"; fi
+  done
+  if [ "$idx" -eq 0 ]; then printf '\033[7m all%*s\033[0m\n' $(( w - 4 )) ""
+  else                      printf ' \033[2mall (tab)\033[0m\n'; fi
+  [ -n "$sel" ] && [ -e "$sel" ] || exit 0
+  printf '\n\033[2m%*s\033[0m\n' "$w" "" | tr ' ' '-'
+  d="$(destdir "$sel")"
+  if git -C "$d" rev-parse --git-dir >/dev/null 2>&1; then
+    b="$(git -C "$d" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+    n="$(git -C "$d" status --porcelain 2>/dev/null | wc -l)"
+    if [ "$n" -gt 0 ]; then printf '\033[33m%s\033[0m \033[31m*%s\033[0m\n' "$b" "$n"
+    else                    printf '\033[33m%s\033[0m \033[32mclean\033[0m\n' "$b"; fi
+  fi
+  venv_for "$d" >/dev/null 2>&1 && printf '\033[32mvenv\033[0m\n'
   exit 0
 fi
 
@@ -196,10 +229,13 @@ command -v fzf >/dev/null || die "fzf is not on PATH"
 # The preview costs half the width, which a phone terminal does not have, so
 # below 90 columns it starts hidden. ^o toggles it either way.
 cols="${HOP_COLS:-$(tput cols 2>/dev/null || echo 80)}"
-if [ "$cols" -ge 90 ]; then pvw="right,50%,border-left"; listw=$(( cols / 2 )); hgt=80%
-else                        pvw="hidden,right,50%,border-left"; listw="$cols"; hgt=100%; fi
+export HOP_PANEW=20
+if   [ "$cols" -ge 76 ]; then pvw="left,22,border-right";        listw=$(( cols - 22 )); hgt=80%
+elif [ "$cols" -ge 56 ]; then export HOP_PANEW=14
+                              pvw="left,16,border-right";        listw=$(( cols - 16 )); hgt=100%
+else                          pvw="hidden,left,16,border-right"; listw="$cols";          hgt=100%; fi
 # The path column is the first thing to go when it will not fit.
-if [ "$listw" -ge 46 ]; then export HOP_SHOWPATH=1; else export HOP_SHOWPATH=0; fi
+if [ "$listw" -ge 56 ]; then export HOP_SHOWPATH=1; else export HOP_SHOWPATH=0; fi
 export HOP_ALL="$show_all"
 
 missing="$(parse | awk -F'\t' -v all="$show_all" '{ if (all=="0" && system("test -e \"" $4 "\"")!=0) m++ } END { print m+0 }')"
@@ -220,11 +256,11 @@ while IFS= read -r c; do
   strip="$strip${strip:+ · }$i:$c"
 done < <(categories)
 
-if [ "$listw" -ge 62 ]; then
-  hdr="tab category · $strip"$'\n'"enter cd · ^e edit · ^a claude · ^u pull · ^p push · ^o preview"
-else
-  hdr="tab · $strip"$'\n'"enter cd · ^e edit · ^a claude"
-fi
+case "$pvw" in
+  hidden*) hdr="tab · $strip"$'\n'"enter cd · ^e edit · ^a claude" ;;
+  *)       hdr="enter cd · ^e edit · ^a claude · ^u pull · ^p push"
+           [ "$listw" -ge 62 ] || hdr="enter cd · ^e edit · ^a claude" ;;
+esac
 [ "$missing" -gt 0 ] && hdr="$hdr"$'\n'"$missing not here (--all)"
 
 out="$(printf '%s\n' "$rows" | fzf \
@@ -234,7 +270,7 @@ out="$(printf '%s\n' "$rows" | fzf \
   --query="${1:-}" \
   "${binds[@]}" \
   --expect=ctrl-a,ctrl-e,ctrl-u,ctrl-p \
-  --preview="'$SELF' --preview {2}" --preview-window="$pvw")"
+  --preview="'$SELF' --pane {2} $state" --preview-window="$pvw")"
 
 [ -n "$out" ] || exit 0
 key="$(printf '%s' "$out" | sed -n 1p)"
