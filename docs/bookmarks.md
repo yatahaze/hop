@@ -19,6 +19,18 @@ parsed, never `eval`d.
 Categories are just a filter prefix. Typing `conf` narrows to `configs/`.
 Invent whatever ones you want.
 
+Prefix a name with `*` to pin it to the top of the list:
+
+```ini
+[repos]
+*webapp         ~/src/webapp
+api             ~/src/api
+```
+
+Pinned entries sort first and keep their category. Because a later source
+overrides an earlier one, a personal file can pin something a system file
+defined, by repeating it with a `*`.
+
 A bookmark can point at a file. `enter` takes you to its directory, `ctrl-e`
 opens the file.
 
@@ -65,10 +77,10 @@ One list can therefore serve machines with different layouts.
 | Key | Does |
 |---|---|
 | type | filter, category names match too |
-| `enter` | hop there |
-| `ctrl-a` | run `claude` there, then land there |
-| `ctrl-e` | open in `$EDITOR` |
-| `ctrl-u` | `git pull` |
-| `ctrl-p` | `git push` |
+| `enter` | cd there |
+| `^e` | open in `$EDITOR` |
+| `^a` | run `claude` there, then land there |
+| `^u` | `git pull` |
+| `^p` | `git push` |
 
 `hop web` starts with `web` already typed.

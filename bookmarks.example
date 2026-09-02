@@ -8,6 +8,7 @@
 # (the count shows in the header; `hop --all` reveals them).
 #
 # Categories are yours to invent. They are just the filter prefix.
+# Prefix a name with * to pin it to the top.
 
 [repos]
 hop             ~/hop
@@ -18,7 +19,7 @@ dotfiles        ~/dotfiles
 myapp           ~/apps/myapp
 
 [configs]
-claude          ~/.claude
+*claude         ~/.claude
 nvim            ~/.config/nvim
 fish            ~/.config/fish
 ~/.bashrc

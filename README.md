@@ -2,15 +2,7 @@
 
 Bookmarks for the directories you work in. Type to filter, enter to land there.
 
-```
-hop > web
-  repos/   webapp          ~/src/webapp        ┌────────────────────────┐
-▌ repos/   webapp-docs     ~/src/webapp-docs   │ ~/src/webapp           │
-  configs/ webserver       /etc/nginx          │ ## main...origin/main  │
-                                               │  M src/settings.py     │
-  enter hop · ctrl-a claude · ctrl-e edit      │ 3f9a1c2 fix pagination │
-  ctrl-u pull · ctrl-p push                    └────────────────────────┘
-```
+![hop listing bookmarked directories, filtered by typing, with a git status preview of the selected repo](docs/demo.png)
 
 `enter` puts your shell in that directory. Other keys act on it in place: open
 in `$EDITOR`, pull, push, start an agent.

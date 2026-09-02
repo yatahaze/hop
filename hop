@@ -32,7 +32,7 @@ die() { printf 'hop: %s\n' "$*" >&2; exit 1; }
 # Emits: category <TAB> name <TAB> path
 # Only ~ and $HOME are expanded. The file is hand-edited but never eval'd.
 parse_one() {
-  local cat=misc line name path
+  local cat=misc line name path tok pin
   while IFS= read -r line || [ -n "$line" ]; do
     line="${line%$'\r'}"
     case $line in \#*) continue ;; esac
@@ -46,25 +46,29 @@ parse_one() {
       continue
     fi
 
-    name="${line%%[[:space:]]*}"
-    path="${line#"$name"}"
+    tok="${line%%[[:space:]]*}"
+    path="${line#"$tok"}"
     path="${path#"${path%%[![:space:]]*}"}"
-    if [ -z "$path" ]; then path="$name"; name="$(basename "$path")"; fi
+    # A leading * pins the entry to the top of the list.
+    pin=0
+    case $tok in \**) pin=1; tok="${tok#\*}" ;; esac
+    if [ -z "$path" ]; then path="$tok"; name="$(basename "$path")"; else name="$tok"; fi
 
     path="${path//\$HOME/$HOME}"
     [ "${path:0:1}" = "~" ] && path="$HOME${path:1}"
 
-    printf '%s\t%s\t%s\n' "$cat" "$name" "$path"
+    printf '%s\t%s\t%s\t%s\n' "$pin" "$cat" "$name" "$path"
   done < "$1"
 }
 
 parse() {
   local f
   { while IFS= read -r f; do parse_one "$f"; done < <(sources); } |
-    awk -F'\t' '{ k=$1 FS $2
+    awk -F'\t' '{ k=$2 FS $3
                   if (!(k in seen)) { seen[k]=1; order[++n]=k }
                   val[k]=$0 }
-                END { for (i=1;i<=n;i++) print val[order[i]] }'
+                END { for (i=1;i<=n;i++) if (val[order[i]] ~ /^1\t/) print val[order[i]]
+                      for (i=1;i<=n;i++) if (val[order[i]] !~ /^1\t/) print val[order[i]] }'
 }
 
 # A bookmark may point at a file (~/.bashrc); you hop to its directory.
@@ -74,7 +78,8 @@ destdir() { if [ -d "$1" ]; then printf '%s' "$1"; else dirname "$1"; fi; }
 if [ "${1:-}" = "--preview" ]; then
   p="${2:-}"
   [ -e "$p" ] || { echo "missing: $p"; exit 0; }
-  echo "$p"; echo
+  case "$p" in "$HOME"/*) echo "~${p#"$HOME"}" ;; *) echo "$p" ;; esac
+  echo
   d="$(destdir "$p")"
   if git -C "$d" rev-parse --git-dir >/dev/null 2>&1; then
     git -C "$d" -c color.ui=always status -sb 2>/dev/null | head -20
@@ -112,7 +117,7 @@ USAGE
 SEED
     fi
     exec ${EDITOR:-vi} "$USER_DIR/bookmarks" ;;
-  --list) parse; exit 0 ;;
+  --list) parse | cut -f2-; exit 0 ;;
 esac
 
 [ -n "$(sources)" ] || die "no bookmarks in $SYS_DIR or $USER_DIR. Run: hop --edit"
@@ -121,24 +126,24 @@ command -v fzf >/dev/null || die "fzf is not on PATH"
 # --- build the list ---------------------------------------------------------
 # Rows are: "<display>\t<path>". Paths that don't exist on this machine are
 # dropped (the same bookmarks file is shared across machines) and counted.
-missing="$(parse | awk -F'\t' -v all="$show_all" '{ if (all=="0" && system("test -e \"" $3 "\"")!=0) m++ } END { print m+0 }')"
+missing="$(parse | awk -F'\t' -v all="$show_all" '{ if (all=="0" && system("test -e \"" $4 "\"")!=0) m++ } END { print m+0 }')"
 rows="$(parse | awk -F'\t' -v all="$show_all" -v home="$HOME" '
-  { cat[NR]=$1; nm[NR]=$2; pa[NR]=$3
-    if (length($1)+1>cw) cw=length($1)+1
-    if (length($2)>nw) nw=length($2)
+  { pn[NR]=$1; cat[NR]=$2; nm[NR]=$3; pa[NR]=$4
+    if (length($2)+1>cw) cw=length($2)+1
+    if (length($3)>nw) nw=length($3)
     n=NR }
   END {
     for (i=1;i<=n;i++) {
       if (all=="0" && system("test -e \"" pa[i] "\"")!=0) continue
       short=pa[i]; sub("^" home, "~", short)
-      printf "\033[2m%-*s\033[0m %-*s \033[2m%s\033[0m\t%s\n", cw, cat[i]"/", nw, nm[i], short, pa[i]
+      printf "%s\033[2m%-*s\033[0m %-*s \033[2m%s\033[0m\t%s\n", (pn[i]=="1" ? "*" : " "), cw, cat[i]"/", nw, nm[i], short, pa[i]
     }
   }')"
 
 [ -n "$rows" ] || die "no bookmark path exists on this machine (try: hop --all)"
 
-hdr="enter hop · ctrl-a claude · ctrl-e edit · ctrl-u pull · ctrl-p push"
-[ "$missing" -gt 0 ] && hdr="$hdr · $missing not on this machine (--all)"
+hdr="enter cd · ^e edit · ^a claude"$'\n'"^u pull · ^p push"
+[ "$missing" -gt 0 ] && hdr="$hdr · $missing not here (--all)"
 
 out="$(printf '%s\n' "$rows" | fzf \
   --ansi --layout=reverse --border --height=80% \
