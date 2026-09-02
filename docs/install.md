@@ -51,28 +51,6 @@ function hop
 end
 ```
 
-## Many machines
-
-With config management (salt, ansible, chef), install per host:
-
-| Path | What |
-|---|---|
-| `/usr/local/bin/hop` | the script, mode 0755 |
-| `/etc/profile.d/hop.sh` | the shell function |
-| `/etc/fish/conf.d/hop.fish` | same, where fish exists |
-| `/etc/hop/bookmarks.d/00-fleet.conf` | your shared bookmark list |
-| package `fzf` | the picker |
-
-Ship the shared list as a drop-in under `bookmarks.d/`, not as
-`/etc/hop/bookmarks`. Bookmarks merge, so a drop-in leaves both
-`/etc/hop/bookmarks` free for a local admin and `~/.config/hop/` free for each
-user, and neither fights your tooling. See [Bookmarks](bookmarks.md).
-
-Updating every host is then one push of the shared list plus one apply.
-
-Windows hosts have no `/usr/local/bin` or `/etc/profile.d`, so exclude them.
-See the [roadmap](../ROADMAP.md).
-
 ## Uninstall
 
 ```bash

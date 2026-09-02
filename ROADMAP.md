@@ -2,8 +2,8 @@
 
 ## Windows
 
-Windows hosts are excluded from the config-management state today, and have to
-be: there is no `/usr/local/bin` and no `/etc/profile.d` to install into.
+Unsupported today. The script is bash, and the install targets it assumes
+(`/usr/local/bin`, `/etc/profile.d`) do not exist.
 
 Notes for whoever picks this up:
 
@@ -17,8 +17,6 @@ Notes for whoever picks this up:
   file, same merge order, with `%ProgramData%\hop\bookmarks.d\` and
   `%APPDATA%\hop\bookmarks.d\` standing in for `/etc` and `~/.config`. Path
   separators are the only real difference; `~` expansion becomes `$HOME`.
-- Config-management side: a separate Windows state, since the install targets
-  and the package source are entirely different.
 
 Open question worth settling first: whether this is a second implementation of
 the same spec, or whether the picker moves to something that already runs on
@@ -26,8 +24,8 @@ both and the bash version retires.
 
 ## Discovered bookmarks
 
-Offer repos found by scanning (`~/apps/*/content`, anything with a `.git`)
-rather than only what is hand-listed. The parser is the seam: anything that
+Offer directories found by scanning (anything with a `.git`, say) rather
+than only what is hand-listed. The parser is the seam: anything that
 emits `category<TAB>name<TAB>path` merges in like any other source, so this
 could be a generated drop-in rather than a change to the picker.
 

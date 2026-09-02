@@ -12,10 +12,10 @@ SELF="$(readlink -f "${BASH_SOURCE[0]}")"
 USER_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hop"
 SYS_DIR=/etc/hop
 
-# Bookmarks merge from every source below, in order. Salt owns the /etc
-# drop-ins, you own the ones under ~; nobody has to copy the other's list to
-# add one line. A later source redefining the same category/name wins, so a
-# personal file can override a fleet entry without masking the rest of it.
+# Bookmarks merge from every source below, in order. The /etc files are system
+# wide, the ones under ~ are yours; neither has to copy the other's list to add
+# one line. A later source redefining the same category/name wins, so a personal
+# file can override a system entry without masking the rest of it.
 sources() {
   if [ -n "${HOP_CONFIG:-}" ]; then printf '%s\n' "$HOP_CONFIG"; return 0; fi
   local f
@@ -104,8 +104,8 @@ USAGE
     mkdir -p "$USER_DIR"
     if [ ! -f "$USER_DIR/bookmarks" ]; then
       cat > "$USER_DIR/bookmarks" <<'SEED'
-# Your bookmarks. These MERGE with the fleet list in /etc/hop -- you only need
-# what is yours; repeating a category/name from there overrides just that one.
+# Your bookmarks. These MERGE with anything in /etc/hop, so you only need what
+# is yours. Repeating a category/name from there overrides just that one.
 # Drop-ins in ~/.config/hop/bookmarks.d/*.conf are merged too.
 
 [mine]

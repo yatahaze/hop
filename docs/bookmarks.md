@@ -28,8 +28,8 @@ Every file that exists is read, in this order:
 
 | Source | Owner |
 |---|---|
-| `/etc/hop/bookmarks` | local admin |
-| `/etc/hop/bookmarks.d/*.conf` | config management |
+| `/etc/hop/bookmarks` | system wide |
+| `/etc/hop/bookmarks.d/*.conf` | system wide, drop-ins |
 | `~/.config/hop/bookmarks` | you |
 | `~/.config/hop/bookmarks.d/*.conf` | you |
 
@@ -42,12 +42,11 @@ They combine rather than replace. You list only what is yours and still get
 everything from the files above.
 
 Repeating a category and name from an earlier source overrides that one entry,
-in place, and leaves the rest alone. So a shared list can define `repos/webapp`
-and you can point it somewhere else on one machine without losing the other
+in place, and leaves the rest alone. So a system wide list can define
+`repos/webapp` and you can point it somewhere else without losing the other
 fifty entries.
 
-This is what makes a shared list safe. Without it, creating a personal file
-would hide the shared one completely.
+Without this, creating a personal file would hide the system one completely.
 
 ## Paths that do not exist
 
@@ -59,8 +58,7 @@ enter hop · ctrl-a claude · ctrl-e edit · 3 not on this machine (--all)
 
 `hop --all` shows them.
 
-One list can therefore serve machines with different layouts, which is the
-point when the same file is deployed everywhere.
+One list can therefore serve machines with different layouts.
 
 ## Keys
 
