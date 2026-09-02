@@ -4,7 +4,7 @@ Bookmarks for the directories you work in. Categories down the left, bookmarks
 in the main area. `tab` walks the categories, arrows pick, `enter` lands you
 there. Type to filter if you would rather.
 
-![hop: a category column on the left listing repos, configs and notes with counts, and the bookmarks for the active category in the main area](docs/demo.png)
+![hop: a category column on the left listing repos, configs and notes with counts, repos highlighted as the active one, and its five bookmarks listed in the main area](docs/demo.png)
 
 `enter` puts your shell in that directory, and activates the project's
 virtualenv if it finds one. Other keys act on it in place: open in `$EDITOR`,
@@ -25,7 +25,7 @@ The layout adapts to width, dropping the widest thing first:
 Switching category is one key rather than a typed query, which is what makes
 it usable on a phone or in a thin split. `^o` toggles the column.
 
-![the same picker at 44 columns: the category column collapsed to a single line of hotkeys, bookmark names only](docs/demo-narrow.png)
+![the same picker at 44 columns: the category column collapsed to a single line of numbered hotkeys, with the active category filtered to names only](docs/demo-narrow.png)
 
 ## Install
 
