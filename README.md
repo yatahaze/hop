@@ -1,6 +1,7 @@
 # hop
 
-Bookmarks for the directories you work in. Type to filter, enter to land there.
+Bookmarks for the directories you work in. `tab` walks the categories, arrows
+pick, `enter` lands you there. Type to filter if you would rather.
 
 ![hop listing bookmarked directories, filtered by typing, with a git status preview of the selected repo](docs/demo.png)
 
@@ -8,6 +9,14 @@ Bookmarks for the directories you work in. Type to filter, enter to land there.
 in `$EDITOR`, pull, push, start an agent.
 
 Bash and `fzf`. No runtime, no build. Works over SSH.
+
+## Narrow terminals
+
+The layout adapts. Below 90 columns the preview hides (`^o` brings it back);
+below 46 the path column goes. Switching category is one key rather than a
+typed query, which is what makes it usable on a phone or in a thin split.
+
+![the same picker at 44 columns: no preview, no path column, categories still one key away](docs/demo-narrow.png)
 
 ## Install
 

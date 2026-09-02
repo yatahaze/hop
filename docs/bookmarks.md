@@ -76,11 +76,14 @@ One list can therefore serve machines with different layouts.
 
 | Key | Does |
 |---|---|
+| `tab` / `shift-tab` | next / previous category, then back to all |
+| `alt-1`..`alt-9` | jump straight to a category |
 | type | filter, category names match too |
 | `enter` | cd there |
 | `^e` | open in `$EDITOR` |
 | `^a` | run `claude` there, then land there |
 | `^u` | `git pull` |
 | `^p` | `git push` |
+| `^o` | show or hide the preview |
 
 `hop web` starts with `web` already typed.

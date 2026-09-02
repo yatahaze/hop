@@ -74,6 +74,48 @@ parse() {
 # A bookmark may point at a file (~/.bashrc); you hop to its directory.
 destdir() { if [ -d "$1" ]; then printf '%s' "$1"; else dirname "$1"; fi; }
 
+# Column widths come from the whole set, not the filtered subset, so cycling
+# between categories does not make the list jitter. HOP_ALL and HOP_SHOWPATH
+# are exported so the reload subprocess renders rows identically to the parent.
+rows_for() {
+  parse | awk -F'\t' -v all="${HOP_ALL:-0}" -v home="$HOME" \
+                     -v only="${1:-}" -v showpath="${HOP_SHOWPATH:-1}" '
+    { pn[NR]=$1; cat[NR]=$2; nm[NR]=$3; pa[NR]=$4
+      if (length($2)+1>cw) cw=length($2)+1
+      if (length($3)>nw) nw=length($3)
+      n=NR }
+    END {
+      for (i=1;i<=n;i++) {
+        if (all=="0" && system("test -e \"" pa[i] "\"")!=0) continue
+        if (only != "" && cat[i] != only) continue
+        mark = (pn[i]=="1" ? "*" : " ")
+        if (showpath=="1") {
+          short=pa[i]; sub("^" home, "~", short)
+          printf "%s\033[2m%-*s\033[0m %-*s \033[2m%s\033[0m\t%s\n", mark, cw, cat[i]"/", nw, nm[i], short, pa[i]
+        } else
+          printf "%s\033[2m%-*s\033[0m %s\t%s\n", mark, cw, cat[i]"/", nm[i], pa[i]
+      }
+    }'
+}
+
+categories() { parse | cut -f2 | awk '!seen[$0]++'; }
+
+# --- category cycling (invoked by fzf as a subprocess) ----------------------
+# Typing is the expensive part on a phone, so tab walks the categories and
+# index 0 means "all". State lives in a file because fzf 0.37 has no
+# `transform` action to carry it.
+if [ "${1:-}" = "--cycle" ]; then
+  spec="${2:-+1}"; state="${3:-}"
+  mapfile -t cats < <(categories)
+  idx=0; [ -s "$state" ] && idx="$(cat "$state")"
+  case "$spec" in +*|-*) idx=$(( idx + (spec) )) ;; *) idx="$spec" ;; esac
+  n=${#cats[@]}
+  idx=$(( idx % (n + 1) )); [ "$idx" -lt 0 ] && idx=$(( idx + n + 1 ))
+  printf '%s' "$idx" > "$state"
+  if [ "$idx" -eq 0 ]; then rows_for ""; else rows_for "${cats[idx-1]}"; fi
+  exit 0
+fi
+
 # --- preview (invoked by fzf as a subprocess) -------------------------------
 if [ "${1:-}" = "--preview" ]; then
   p="${2:-}"
@@ -97,12 +139,17 @@ case "${1:-}" in
   -h|--help)
     cat >&2 <<'USAGE'
 hop [--all] [query]     pick a bookmark; the shell wrapper cds you there
-hop --edit              open the bookmarks file in $EDITOR
+hop --edit              open your bookmarks file in $EDITOR
 hop --list              print bookmarks as category<TAB>name<TAB>path
 
-In the picker: type to filter (category names match too)
-  enter  hop there          ctrl-a  run claude there
-  ctrl-e open in $EDITOR    ctrl-u  git pull      ctrl-p  git push
+In the picker:
+  tab / shift-tab   next / previous category; alt-1..9 jump straight to one
+  type              filter, category names match too
+  enter             cd there
+  ^e edit    ^a claude    ^u git pull    ^p git push    ^o toggle preview
+
+Layout adapts to width: the preview is hidden below 90 columns and the path
+column drops below 46, so it stays usable in a narrow split or on a phone.
 USAGE
     exit 0 ;;
   --edit)
@@ -123,35 +170,49 @@ esac
 [ -n "$(sources)" ] || die "no bookmarks in $SYS_DIR or $USER_DIR. Run: hop --edit"
 command -v fzf >/dev/null || die "fzf is not on PATH"
 
-# --- build the list ---------------------------------------------------------
-# Rows are: "<display>\t<path>". Paths that don't exist on this machine are
-# dropped (the same bookmarks file is shared across machines) and counted.
-missing="$(parse | awk -F'\t' -v all="$show_all" '{ if (all=="0" && system("test -e \"" $4 "\"")!=0) m++ } END { print m+0 }')"
-rows="$(parse | awk -F'\t' -v all="$show_all" -v home="$HOME" '
-  { pn[NR]=$1; cat[NR]=$2; nm[NR]=$3; pa[NR]=$4
-    if (length($2)+1>cw) cw=length($2)+1
-    if (length($3)>nw) nw=length($3)
-    n=NR }
-  END {
-    for (i=1;i<=n;i++) {
-      if (all=="0" && system("test -e \"" pa[i] "\"")!=0) continue
-      short=pa[i]; sub("^" home, "~", short)
-      printf "%s\033[2m%-*s\033[0m %-*s \033[2m%s\033[0m\t%s\n", (pn[i]=="1" ? "*" : " "), cw, cat[i]"/", nw, nm[i], short, pa[i]
-    }
-  }')"
+# --- layout -----------------------------------------------------------------
+# The preview costs half the width, which a phone terminal does not have, so
+# below 90 columns it starts hidden. ^o toggles it either way.
+cols="${HOP_COLS:-$(tput cols 2>/dev/null || echo 80)}"
+if [ "$cols" -ge 90 ]; then pvw="right,50%,border-left"; listw=$(( cols / 2 )); hgt=80%
+else                        pvw="hidden,right,50%,border-left"; listw="$cols"; hgt=100%; fi
+# The path column is the first thing to go when it will not fit.
+if [ "$listw" -ge 46 ]; then export HOP_SHOWPATH=1; else export HOP_SHOWPATH=0; fi
+export HOP_ALL="$show_all"
 
+missing="$(parse | awk -F'\t' -v all="$show_all" '{ if (all=="0" && system("test -e \"" $4 "\"")!=0) m++ } END { print m+0 }')"
+rows="$(rows_for "")"
 [ -n "$rows" ] || die "no bookmark path exists on this machine (try: hop --all)"
 
-hdr="enter cd · ^e edit · ^a claude"$'\n'"^u pull · ^p push"
-[ "$missing" -gt 0 ] && hdr="$hdr · $missing not here (--all)"
+state="$(mktemp)"; trap 'rm -f "$state"' EXIT INT TERM HUP
+printf 0 > "$state"
+
+binds=( --bind "ctrl-o:toggle-preview"
+        --bind "tab:reload($SELF --cycle +1 $state)"
+        --bind "btab:reload($SELF --cycle -1 $state)" )
+strip=""; i=0
+while IFS= read -r c; do
+  [ -z "$c" ] && continue
+  i=$(( i + 1 )); [ "$i" -gt 9 ] && break
+  binds+=( --bind "alt-$i:reload($SELF --cycle $i $state)" )
+  strip="$strip${strip:+ · }$i:$c"
+done < <(categories)
+
+if [ "$listw" -ge 62 ]; then
+  hdr="tab category · $strip"$'\n'"enter cd · ^e edit · ^a claude · ^u pull · ^p push · ^o preview"
+else
+  hdr="tab · $strip"$'\n'"enter cd · ^e edit · ^a claude"
+fi
+[ "$missing" -gt 0 ] && hdr="$hdr"$'\n'"$missing not here (--all)"
 
 out="$(printf '%s\n' "$rows" | fzf \
-  --ansi --layout=reverse --border --height=80% \
+  --ansi --layout=reverse --border --height="$hgt" \
   --delimiter=$'\t' --with-nth=1 --nth=1 \
   --prompt='hop > ' --header="$hdr" \
   --query="${1:-}" \
+  "${binds[@]}" \
   --expect=ctrl-a,ctrl-e,ctrl-u,ctrl-p \
-  --preview="'$SELF' --preview {2}" --preview-window=right,50%,border-left)"
+  --preview="'$SELF' --preview {2}" --preview-window="$pvw")"
 
 [ -n "$out" ] || exit 0
 key="$(printf '%s' "$out" | sed -n 1p)"
