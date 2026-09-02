@@ -19,7 +19,12 @@ parsed, never `eval`d.
 Categories are just a filter prefix. Typing `conf` narrows to `configs/`.
 Invent whatever ones you want.
 
-Prefix a name with `*` to pin it to the top of the list:
+Press `^t` in the picker to pin or unpin whatever is selected. It takes effect
+immediately and survives restarts, kept in `~/.config/hop/pins` as a
+category/name pair rather than a copy of the entry, so a pin never goes stale
+when you edit the path.
+
+You can also pin in the file itself, by prefixing a name with `*`:
 
 ```ini
 [repos]
@@ -30,6 +35,9 @@ api             ~/src/api
 Pinned entries sort first and keep their category. Because a later source
 overrides an earlier one, a personal file can pin something a system file
 defined, by repeating it with a `*`.
+
+`^t` wins over both: it can unpin something a file pinned with `*`, including
+a file you have no write access to.
 
 A bookmark can point at a file. `enter` takes you to its directory, `ctrl-e`
 opens the file.
@@ -99,6 +107,7 @@ One list can therefore serve machines with different layouts.
 | `^o` | show or hide the category column |
 | type | filter, category names match too |
 | `enter` | cd there |
+| `^t` | pin or unpin the selected bookmark |
 | `^e` | open in `$EDITOR` |
 | `^a` | run `claude` there, then land there |
 | `^u` | `git pull` |

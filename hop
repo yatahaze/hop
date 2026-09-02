@@ -61,14 +61,34 @@ parse_one() {
   done < "$1"
 }
 
-parse() {
+# Pins toggled with ^t live here, as category/name plus a +/- state. Keyed
+# rather than copied so a pin never carries a stale duplicate of a path you
+# later edit, and so it can override a * that came from a file you do not own.
+PINS="$USER_DIR/pins"
+
+parse_merged() {
   local f
   { while IFS= read -r f; do parse_one "$f"; done < <(sources); } |
     awk -F'\t' '{ k=$2 FS $3
                   if (!(k in seen)) { seen[k]=1; order[++n]=k }
                   val[k]=$0 }
-                END { for (i=1;i<=n;i++) if (val[order[i]] ~ /^1\t/) print val[order[i]]
-                      for (i=1;i<=n;i++) if (val[order[i]] !~ /^1\t/) print val[order[i]] }'
+                END { for (i=1;i<=n;i++) print val[order[i]] }' |
+    awk -F'\t' -v pf="$PINS" '
+      BEGIN { while ((getline l < pf) > 0)
+                if (l ~ /^[+-]/) ov[substr(l,2)] = (substr(l,1,1) == "+") }
+      { k=$2 FS $3
+        if (k in ov) $1 = (ov[k] ? 1 : 0)
+        line = $1 FS $2 FS $3 FS $4
+        if (!(k in seen)) { seen[k]=1; order[++n]=k }
+        val[k]=line }
+      END { for (i=1;i<=n;i++) print val[order[i]] }'
+}
+
+# Pinned first, file order within each group.
+parse() {
+  parse_merged | awk -F'\t' '{ line[NR]=$0 } END {
+    for (i=1;i<=NR;i++) if (line[i] ~ /^1\t/) print line[i]
+    for (i=1;i<=NR;i++) if (line[i] !~ /^1\t/) print line[i] }'
 }
 
 # A bookmark may point at a file (~/.bashrc); you hop to its directory.
@@ -107,14 +127,14 @@ rows_for() {
         pre  = (only=="" ? sprintf("\033[2m%-*s\033[0m ", cw, cat[i]"/") : "")
         if (showpath=="1") {
           short=pa[i]; sub("^" home, "~", short)
-          printf "%s%s%-*s \033[2m%s\033[0m\t%s\n", mark, pre, nw, nm[i], short, pa[i]
+          printf "%s%s%-*s \033[2m%s\033[0m\t%s\t%s\t%s\n", mark, pre, nw, nm[i], short, pa[i], cat[i], nm[i]
         } else
-          printf "%s%s%s\t%s\n", mark, pre, nm[i], pa[i]
+          printf "%s%s%s\t%s\t%s\t%s\n", mark, pre, nm[i], pa[i], cat[i], nm[i]
       }
     }'
 }
 
-categories() { parse | cut -f2 | awk '!seen[$0]++'; }
+categories() { parse_merged | cut -f2 | awk '!seen[$0]++'; }
 
 # --- category cycling (invoked by fzf as a subprocess) ----------------------
 # Typing is the expensive part on a phone, so tab walks the categories and
@@ -129,6 +149,20 @@ if [ "${1:-}" = "--cycle" ]; then
   idx=$(( idx % (n + 1) )); [ "$idx" -lt 0 ] && idx=$(( idx + n + 1 ))
   printf '%s' "$idx" > "$state"
   if [ "$idx" -eq 0 ]; then rows_for ""; else rows_for "${cats[idx-1]}"; fi
+  exit 0
+fi
+
+# --- pin toggle (invoked by fzf as a subprocess) ----------------------------
+if [ "${1:-}" = "--pin" ]; then
+  pcat="${2:-}"; pname="${3:-}"
+  [ -n "$pcat" ] && [ -n "$pname" ] || exit 0
+  cur="$(parse | awk -F'\t' -v c="$pcat" -v n="$pname" '$2==c && $3==n {print $1; exit}')"
+  [ "$cur" = "1" ] && sign="-" || sign="+"
+  mkdir -p "$(dirname "$PINS")"
+  tmp="$(mktemp)"
+  [ -f "$PINS" ] && grep -vxF -- "+$pcat	$pname" "$PINS" | grep -vxF -- "-$pcat	$pname" > "$tmp"
+  printf '%s%s\t%s\n' "$sign" "$pcat" "$pname" >> "$tmp"
+  mv "$tmp" "$PINS"
   exit 0
 fi
 
@@ -210,7 +244,7 @@ In the picker:
   tab / shift-tab   next / previous category; alt-1..9 jump straight to one
   type              filter, category names match too
   enter             cd there
-  ^e edit    ^a claude    ^u git pull    ^p git push    ^o toggle preview
+  ^t                pin or unpin the selected bookmark (kept in ~/.config/hop/pins)\n  ^e edit    ^a claude    ^u git pull    ^p git push    ^o toggle column
 
 Layout adapts to width: the preview is hidden below 90 columns and the path
 column drops below 46, so it stays usable in a narrow split or on a phone.
@@ -260,6 +294,7 @@ state="$(mktemp)"; trap 'rm -f "$state"' EXIT INT TERM HUP
 printf 0 > "$state"
 
 binds=( --bind "ctrl-o:toggle-preview"
+        --bind "ctrl-t:execute-silent($SELF --pin {3} {4})+reload($SELF --cycle +0 $state)"
         --bind "tab:reload($SELF --cycle +1 $state)"
         --bind "btab:reload($SELF --cycle -1 $state)" )
 strip=""; i=0
@@ -271,10 +306,10 @@ while IFS= read -r c; do
 done < <(categories)
 
 case "$pvw" in
-  hidden*) hdr="tab · $strip"$'\n'"enter cd · ^e edit · ^a claude" ;;
-  *)       hdr="enter cd · ^e edit · ^a claude · ^u pull · ^p push"
-           [ "$listw" -ge 62 ] || hdr="enter cd · ^e edit · ^a claude"
-           [ "$listw" -ge 36 ] || hdr="enter cd · tab" ;;
+  hidden*) hdr="tab · $strip"$'\n'"enter cd · ^t pin · ^e edit · ^a claude" ;;
+  *)       hdr="enter cd · ^t pin · ^e edit · ^a claude · ^u pull · ^p push"
+           [ "$listw" -ge 62 ] || hdr="enter cd · ^t pin · ^e edit · ^a claude"
+           [ "$listw" -ge 36 ] || hdr="enter cd · ^t pin" ;;
 esac
 [ "$missing" -gt 0 ] && hdr="$hdr"$'\n'"$missing not here (--all)"
 
@@ -292,7 +327,8 @@ key="$(printf '%s' "$out" | sed -n 1p)"
 sel="$(printf '%s' "$out" | sed -n 2p)"
 [ -n "$sel" ] || exit 0
 
-target="${sel#*$'\t'}"
+# Field 2 specifically: the row also carries category and name after it, for ^t.
+target="$(printf '%s' "$sel" | cut -f2)"
 dir="$(destdir "$target")"
 
 # Actions take the tty; stdout stays clean so the wrapper can still cd.
