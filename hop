@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+# hop — a bookmark picker for the directories you actually work in.
+#
+# Prints the chosen directory on stdout and nothing else; the shell wrapper
+# installed by install.sh turns that into a `cd`. Everything the user sees
+# (fzf, editors, claude, git) is written straight to /dev/tty so it never
+# pollutes the captured stdout.
+
+set -uo pipefail
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+USER_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/hop"
+SYS_DIR=/etc/hop
+
+# Bookmarks merge from every source below, in order. Salt owns the /etc
+# drop-ins, you own the ones under ~; nobody has to copy the other's list to
+# add one line. A later source redefining the same category/name wins, so a
+# personal file can override a fleet entry without masking the rest of it.
+sources() {
+  if [ -n "${HOP_CONFIG:-}" ]; then printf '%s\n' "$HOP_CONFIG"; return 0; fi
+  local f
+  [ -f "$SYS_DIR/bookmarks" ] && printf '%s\n' "$SYS_DIR/bookmarks"
+  for f in "$SYS_DIR"/bookmarks.d/*.conf;  do [ -f "$f" ] && printf '%s\n' "$f"; done
+  [ -f "$USER_DIR/bookmarks" ] && printf '%s\n' "$USER_DIR/bookmarks"
+  for f in "$USER_DIR"/bookmarks.d/*.conf; do [ -f "$f" ] && printf '%s\n' "$f"; done
+  return 0
+}
+
+die() { printf 'hop: %s\n' "$*" >&2; exit 1; }
+
+# --- config -----------------------------------------------------------------
+# Emits: category <TAB> name <TAB> path
+# Only ~ and $HOME are expanded — the file is hand-edited but never eval'd.
+parse_one() {
+  local cat=misc line name path
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    case $line in \#*) continue ;; esac
+    line="${line%%[[:space:]]#*}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    line="${line%"${line##*[![:space:]]}"}"
+    [ -z "$line" ] && continue
+
+    if [[ $line == \[*\] ]]; then
+      cat="${line:1:${#line}-2}"
+      continue
+    fi
+
+    name="${line%%[[:space:]]*}"
+    path="${line#"$name"}"
+    path="${path#"${path%%[![:space:]]*}"}"
+    if [ -z "$path" ]; then path="$name"; name="$(basename "$path")"; fi
+
+    path="${path//\$HOME/$HOME}"
+    [ "${path:0:1}" = "~" ] && path="$HOME${path:1}"
+
+    printf '%s\t%s\t%s\n' "$cat" "$name" "$path"
+  done < "$1"
+}
+
+parse() {
+  local f
+  { while IFS= read -r f; do parse_one "$f"; done < <(sources); } |
+    awk -F'\t' '{ k=$1 FS $2
+                  if (!(k in seen)) { seen[k]=1; order[++n]=k }
+                  val[k]=$0 }
+                END { for (i=1;i<=n;i++) print val[order[i]] }'
+}
+
+# A bookmark may point at a file (~/.bashrc); you hop to its directory.
+destdir() { if [ -d "$1" ]; then printf '%s' "$1"; else dirname "$1"; fi; }
+
+# --- preview (invoked by fzf as a subprocess) -------------------------------
+if [ "${1:-}" = "--preview" ]; then
+  p="${2:-}"
+  [ -e "$p" ] || { echo "missing: $p"; exit 0; }
+  echo "$p"; echo
+  d="$(destdir "$p")"
+  if git -C "$d" rev-parse --git-dir >/dev/null 2>&1; then
+    git -C "$d" -c color.ui=always status -sb 2>/dev/null | head -20
+    echo
+    git -C "$d" -c color.ui=always log --oneline -5 2>/dev/null
+    echo
+  fi
+  ls -A --color=always "$d" 2>/dev/null | head -30
+  exit 0
+fi
+
+show_all=0
+case "${1:-}" in
+  --all) show_all=1; shift ;;
+  -h|--help)
+    cat >&2 <<'USAGE'
+hop [--all] [query]     pick a bookmark; the shell wrapper cds you there
+hop --edit              open the bookmarks file in $EDITOR
+hop --list              print bookmarks as category<TAB>name<TAB>path
+
+In the picker: type to filter (category names match too)
+  enter  hop there          ctrl-a  run claude there
+  ctrl-e open in $EDITOR    ctrl-u  git pull      ctrl-p  git push
+USAGE
+    exit 0 ;;
+  --edit)
+    mkdir -p "$USER_DIR"
+    if [ ! -f "$USER_DIR/bookmarks" ]; then
+      cat > "$USER_DIR/bookmarks" <<'SEED'
+# Your bookmarks. These MERGE with the fleet list in /etc/hop -- you only need
+# what is yours; repeating a category/name from there overrides just that one.
+# Drop-ins in ~/.config/hop/bookmarks.d/*.conf are merged too.
+
+[mine]
+SEED
+    fi
+    exec ${EDITOR:-vi} "$USER_DIR/bookmarks" ;;
+  --list) parse; exit 0 ;;
+esac
+
+[ -n "$(sources)" ] || die "no bookmarks in $SYS_DIR or $USER_DIR — run: hop --edit"
+command -v fzf >/dev/null || die "fzf is not on PATH"
+
+# --- build the list ---------------------------------------------------------
+# Rows are: "<display>\t<path>". Paths that don't exist on this machine are
+# dropped (the same bookmarks file is shared across machines) and counted.
+missing="$(parse | awk -F'\t' -v all="$show_all" '{ if (all=="0" && system("test -e \"" $3 "\"")!=0) m++ } END { print m+0 }')"
+rows="$(parse | awk -F'\t' -v all="$show_all" -v home="$HOME" '
+  { cat[NR]=$1; nm[NR]=$2; pa[NR]=$3
+    if (length($1)+1>cw) cw=length($1)+1
+    if (length($2)>nw) nw=length($2)
+    n=NR }
+  END {
+    for (i=1;i<=n;i++) {
+      if (all=="0" && system("test -e \"" pa[i] "\"")!=0) continue
+      short=pa[i]; sub("^" home, "~", short)
+      printf "\033[2m%-*s\033[0m %-*s \033[2m%s\033[0m\t%s\n", cw, cat[i]"/", nw, nm[i], short, pa[i]
+    }
+  }')"
+
+[ -n "$rows" ] || die "no bookmark path exists on this machine (try: hop --all)"
+
+hdr="enter hop · ctrl-a claude · ctrl-e edit · ctrl-u pull · ctrl-p push"
+[ "$missing" -gt 0 ] && hdr="$hdr · $missing not on this machine (--all)"
+
+out="$(printf '%s\n' "$rows" | fzf \
+  --ansi --layout=reverse --border --height=80% \
+  --delimiter=$'\t' --with-nth=1 --nth=1 \
+  --prompt='hop > ' --header="$hdr" \
+  --query="${1:-}" \
+  --expect=ctrl-a,ctrl-e,ctrl-u,ctrl-p \
+  --preview="'$SELF' --preview {2}" --preview-window=right,50%,border-left)"
+
+[ -n "$out" ] || exit 0
+key="$(printf '%s' "$out" | sed -n 1p)"
+sel="$(printf '%s' "$out" | sed -n 2p)"
+[ -n "$sel" ] || exit 0
+
+target="${sel#*$'\t'}"
+dir="$(destdir "$target")"
+
+# Actions take the tty; stdout stays clean so the wrapper can still cd.
+case "$key" in
+  ctrl-a) ( cd "$dir" && claude )                     </dev/tty >/dev/tty 2>&1 ;;
+  ctrl-e) ( cd "$dir" && ${EDITOR:-vi} "$target" )    </dev/tty >/dev/tty 2>&1 ;;
+  ctrl-u) ( cd "$dir" && git pull )                   </dev/tty >/dev/tty 2>&1 ;;
+  ctrl-p) ( cd "$dir" && git push )                   </dev/tty >/dev/tty 2>&1 ;;
+esac
+
+printf '%s\n' "$dir"
