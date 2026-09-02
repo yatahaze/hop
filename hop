@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# hop — a bookmark picker for the directories you actually work in.
+# hop: a bookmark picker for the directories you actually work in.
 #
 # Prints the chosen directory on stdout and nothing else; the shell wrapper
 # installed by install.sh turns that into a `cd`. Everything the user sees
@@ -30,7 +30,7 @@ die() { printf 'hop: %s\n' "$*" >&2; exit 1; }
 
 # --- config -----------------------------------------------------------------
 # Emits: category <TAB> name <TAB> path
-# Only ~ and $HOME are expanded — the file is hand-edited but never eval'd.
+# Only ~ and $HOME are expanded. The file is hand-edited but never eval'd.
 parse_one() {
   local cat=misc line name path
   while IFS= read -r line || [ -n "$line" ]; do
@@ -115,7 +115,7 @@ SEED
   --list) parse; exit 0 ;;
 esac
 
-[ -n "$(sources)" ] || die "no bookmarks in $SYS_DIR or $USER_DIR — run: hop --edit"
+[ -n "$(sources)" ] || die "no bookmarks in $SYS_DIR or $USER_DIR. Run: hop --edit"
 command -v fzf >/dev/null || die "fzf is not on PATH"
 
 # --- build the list ---------------------------------------------------------

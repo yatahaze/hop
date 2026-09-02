@@ -26,7 +26,7 @@ add_bash() {
   grep -q 'hop shell wrapper' "$rc" 2>/dev/null && { echo "bash wrapper already in $rc"; return; }
   cat >> "$rc" <<'WRAP'
 
-# hop shell wrapper — the script prints a directory, we cd to it
+# hop shell wrapper. The script prints a directory, we cd to it
 hop() {
   local d
   d="$(command hop "$@")" || return $?
@@ -41,7 +41,7 @@ add_fish() {
   [ -d "${XDG_CONFIG_HOME:-$HOME/.config}/fish" ] || return
   mkdir -p "$d"
   cat > "$d/hop.fish" <<'WRAP'
-# hop shell wrapper — the script prints a directory, we cd to it
+# hop shell wrapper. The script prints a directory, we cd to it
 function hop
     set -l d (command hop $argv); or return $status
     test -n "$d"; and cd $d
@@ -54,4 +54,4 @@ add_bash
 add_fish
 
 echo
-echo "done — open a new shell (or: source ~/.bashrc) and run: hop"
+echo "done. Open a new shell (or: source ~/.bashrc) and run: hop"

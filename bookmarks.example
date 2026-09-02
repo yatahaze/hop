@@ -1,13 +1,13 @@
-# hop bookmarks — one per line, grouped under [category] headers.
+# hop bookmarks. One per line, grouped under [category] headers.
 #
 #   name    path          explicit name
 #   path                  name defaults to the basename
 #
-# ~ and $HOME are expanded. Nothing else is — this file is read, never eval'd.
+# ~ and $HOME are expanded. Nothing else is: this file is read, never eval'd.
 # Bookmarks whose path doesn't exist on the current machine are hidden
 # (the count shows in the header; `hop --all` reveals them).
 #
-# Categories are yours to invent — they're just the filter prefix.
+# Categories are yours to invent. They are just the filter prefix.
 
 [repos]
 hop             ~/hop

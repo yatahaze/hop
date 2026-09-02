@@ -1,8 +1,6 @@
 # hop
 
-A bookmark list for the places you work — repos, app checkouts, tool configs —
-that runs anywhere you have a terminal. Type to filter, arrow to pick, enter to
-land there.
+Bookmarks for the directories you work in. Type to filter, enter to land there.
 
 ```
 hop > web
@@ -14,75 +12,29 @@ hop > web
   ctrl-u pull · ctrl-p push                    └────────────────────────┘
 ```
 
-Needs `bash` and `fzf`. Nothing else — no runtime, no build, works over SSH
-on an old server as well as on the desktop.
+`enter` puts your shell in that directory. Other keys act on it in place: open
+in `$EDITOR`, pull, push, start an agent.
+
+Bash and `fzf`. No runtime, no build. Works over SSH.
 
 ## Install
 
 ```bash
-git clone <repo> ~/hop && ~/hop/install.sh
+git clone https://github.com/yatahaze/hop.git ~/hop && ~/hop/install.sh
 ```
 
-That symlinks `~/bin/hop`, seeds `~/.config/hop/bookmarks`, and adds a shell
-wrapper to `.bashrc` and fish. The wrapper matters: a program can't change its
-parent shell's directory, so `hop` the script *prints* a directory and `hop`
-the shell function `cd`s to it.
+Open a new shell, run `hop`.
 
-## Bookmarks
+`install.sh` also adds a shell function, which is required. A program cannot
+change its parent shell's directory, so `hop` on `PATH` alone would print a
+path and leave you where you were.
 
-Bookmarks **merge** from every source that exists, in order:
+## Docs
 
-| Source | Owner |
+| | |
 |---|---|
-| `/etc/hop/bookmarks` | local admin |
-| `/etc/hop/bookmarks.d/*.conf` | config management (fleet defaults) |
-| `~/.config/hop/bookmarks` | you |
-| `~/.config/hop/bookmarks.d/*.conf` | you |
+| [Install](docs/install.md) | manual install, many machines, uninstall |
+| [Bookmarks](docs/bookmarks.md) | format, where lists live, how they merge |
+| [Roadmap](ROADMAP.md) | Windows, auto-discovery |
 
-```ini
-[repos]
-webapp          ~/src/webapp
-
-[configs]
-claude          ~/.claude
-~/.bashrc                       # name defaults to the basename
-```
-
-`~` and `$HOME` expand; nothing else does — the files are parsed, never
-`eval`d. `hop --edit` opens *your* file; you only list what is yours, because
-the fleet entries are still merged in. Repeating a category/name from an
-earlier source overrides that one entry and leaves the rest alone.
-`HOP_CONFIG=<file>` bypasses the whole stack.
-
-Because the same list is meant to serve every machine, bookmarks whose path
-doesn't exist here are hidden and counted in the header. `hop --all` shows
-them.
-
-## Keys
-
-| Key | Does |
-|---|---|
-| type | filter — the category matches too, so `conf` narrows to `configs/` |
-| `enter` | hop there |
-| `ctrl-a` | run `claude` there, then land there |
-| `ctrl-e` | open in `$EDITOR` |
-| `ctrl-u` / `ctrl-p` | `git pull` / `git push` |
-
-`hop web` starts with `web` already typed. A bookmark pointing at a file hops to
-its directory (and `ctrl-e` opens the file itself).
-
-## Fleet install
-
-`install.sh` is the single-user path (`~/bin`, your shell rc). For many
-machines, a configuration-management state that drops `/usr/local/bin/hop`,
-the profile.d wrapper and a `/etc/hop/bookmarks.d/*.conf` file on each host
-gives you the same thing everywhere, updated in one push. The merge order
-above is what makes that safe to combine with a personal list.
-
-## Roadmap
-
-Windows support and auto-discovery: see [ROADMAP.md](ROADMAP.md).
-
-## License
-
-MIT — see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE).

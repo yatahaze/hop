@@ -27,7 +27,7 @@ both and the bash version retires.
 ## Discovered bookmarks
 
 Offer repos found by scanning (`~/apps/*/content`, anything with a `.git`)
-rather than only what is hand-listed. The parser is the seam — anything that
+rather than only what is hand-listed. The parser is the seam: anything that
 emits `category<TAB>name<TAB>path` merges in like any other source, so this
 could be a generated drop-in rather than a change to the picker.
 
