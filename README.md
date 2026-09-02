@@ -18,14 +18,15 @@ The layout adapts to width, dropping the widest thing first:
 
 | Width | Layout |
 |---|---|
-| 76+ | category column, bookmark names and paths |
-| 56-75 | category column, names only |
-| under 56 | column collapses to a one-line strip, names only |
+| 76+ | column with counts and a status line, names and paths |
+| 56-75 | column with counts, names only |
+| 40-55 | narrow column, names only, status line dropped |
+| under 40 | column collapses to a one-line strip |
 
 Switching category is one key rather than a typed query, which is what makes
 it usable on a phone or in a thin split. `^o` toggles the column.
 
-![the same picker at 44 columns: the category column collapsed to a single line of numbered hotkeys, with the active category filtered to names only](docs/demo-narrow.png)
+![the same picker at 44 columns: the category column still present but narrowed, with the active category filtered to bookmark names only](docs/demo-narrow.png)
 
 ## Install
 
