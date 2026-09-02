@@ -39,7 +39,14 @@ hop() {
 ```
 
 `install.sh` writes this between `# >>> hop >>>` markers, so re-running it
-replaces the block rather than appending a second copy.
+replaces the block rather than appending a second copy, and it bakes the
+script's absolute path into the function rather than looking it up on `PATH`.
+
+That last part matters more than it sounds. Debian and Ubuntu put `~/bin` on
+`PATH` from `~/.profile`, guarded on the directory existing **at login** — so
+right after a fresh install `~/bin` is not on `PATH` in the shell you
+installed from, and `source ~/.bashrc` does not re-read `.profile`. Calling
+the script directly sidesteps every distro's `PATH` convention.
 
 Every action the picker runs (editor, git, an agent) writes to `/dev/tty`
 instead of stdout, so it never breaks that.

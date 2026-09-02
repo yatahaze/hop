@@ -40,11 +40,17 @@ add_bash() {
     fi
     echo "added bash wrapper to $rc"
   fi
-  cat >> "$rc" <<'WRAP'
+  # The script is called by absolute path, not through PATH. ~/bin reaches PATH
+  # via ~/.profile on Debian, guarded on the directory existing at LOGIN, so a
+  # fresh install is not on PATH in the session that ran it -- and sourcing
+  # .bashrc does not re-read .profile. Baking the path in sidesteps every
+  # distro's PATH convention.
+  local blk; blk="$(mktemp)"
+  cat > "$blk" <<'WRAP'
 # >>> hop >>>
 hop() {
   local out d v
-  out="$(HOP_WRAPPED=1 command hop "$@")" || return $?
+  out="$(HOP_WRAPPED=1 @HOP_BIN@ "$@")" || return $?
   [ -n "$out" ] || return 0
   d="${out%%$'\n'*}"
   v="${out#*$'\n'}"; [ "$v" = "$out" ] && v=""
@@ -57,6 +63,9 @@ hop() {
 }
 # <<< hop <<<
 WRAP
+  sed -i "s|@HOP_BIN@|$SRC/hop|" "$blk"
+  cat "$blk" >> "$rc"
+  rm -f "$blk"
 }
 
 add_fish() {
@@ -65,7 +74,7 @@ add_fish() {
   mkdir -p "$d"
   cat > "$d/hop.fish" <<'WRAP'
 function hop
-    set -l out (env HOP_WRAPPED=1 command hop $argv); or return $status
+    set -l out (env HOP_WRAPPED=1 @HOP_BIN@ $argv); or return $status
     test (count $out) -gt 0; or return 0
     cd $out[1]; or return $status
     if test (count $out) -ge 2
@@ -78,11 +87,20 @@ function hop
     end
 end
 WRAP
+  sed -i "s|@HOP_BIN@|$SRC/hop|" "$d/hop.fish"
   echo "wrote $d/hop.fish"
 }
 
 add_bash
 add_fish
+
+case ":$PATH:" in
+  *":$HOME/bin:"*) ;;
+  *) echo
+     echo "note: ~/bin is not on your PATH, so the bare \`hop\` command (e.g."
+     echo "      \`hop --list\`) will not resolve until your next login. The"
+     echo "      shell function works regardless -- it calls the script directly." ;;
+esac
 
 echo
 echo "done. Open a new shell (or: source ~/.bashrc) and run: hop"
