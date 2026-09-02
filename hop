@@ -61,6 +61,20 @@ parse_one() {
   done < "$1"
 }
 
+# Settings: /etc/hop/config then ~/.config/hop/config, last one wins. Same
+# system-then-user shape as bookmarks, so there is only one convention to
+# learn. Format is `key = value`, # starts a comment.
+setting() {
+  local k="$1" v="$2" f got
+  for f in "$SYS_DIR/config" "$USER_DIR/config"; do
+    [ -r "$f" ] || continue
+    got="$(sed -n "s/^[[:space:]]*$k[[:space:]]*=[[:space:]]*\([^#]*\).*/\1/p" "$f" | tail -1)"
+    got="${got%"${got##*[![:space:]]}"}"
+    [ -n "$got" ] && v="$got"
+  done
+  printf '%s' "$v"
+}
+
 # Pins toggled with ^t live here, as category/name plus a +/- state. Keyed
 # rather than copied so a pin never carries a stale duplicate of a path you
 # later edit, and so it can override a * that came from a file you do not own.
@@ -276,7 +290,21 @@ command -v fzf >/dev/null || die "fzf is not on PATH"
 # below 90 columns it starts hidden. ^o toggles it either way.
 cols="${HOP_COLS:-$(tput cols 2>/dev/null || echo 80)}"
 export HOP_PANEW=20 HOP_PANESTATUS=1
-if   [ "$cols" -ge 76 ]; then pvw="left,22,border-right";        listw=$(( cols - 22 )); hgt=80%
+# `minimal = on` is shorthand for turning the chrome off; the individual keys
+# still win where they are set, so it is a default rather than a mode lock.
+minimal="$(setting minimal off)"
+[ "$minimal" = on ] && cdef=off || cdef=auto
+[ "$minimal" = on ] && hdef=off || hdef=on
+# column = auto (fit it to the terminal) | on (always) | off (never).
+# ^o still toggles it within a session either way.
+want_col=1
+case "$(setting column "$cdef")" in
+  off) want_col=0 ;;
+  on)  [ "$cols" -lt 40 ] && cols=40 ;;
+esac
+show_header="$(setting header "$hdef")"
+if   [ "$want_col" = 0 ]; then pvw="hidden,left,13,border-right"; listw="$cols";          hgt=80%
+elif [ "$cols" -ge 76 ]; then pvw="left,22,border-right";        listw=$(( cols - 22 )); hgt=80%
 elif [ "$cols" -ge 56 ]; then export HOP_PANEW=14
                               pvw="left,16,border-right";        listw=$(( cols - 16 )); hgt=100%
 elif [ "$cols" -ge 40 ]; then export HOP_PANEW=12 HOP_PANESTATUS=0
@@ -313,10 +341,13 @@ case "$pvw" in
 esac
 [ "$missing" -gt 0 ] && hdr="$hdr"$'\n'"$missing not here (--all)"
 
+info=inline; hdrarg=(--header "$hdr")
+if [ "$show_header" = off ]; then hdrarg=(); info=hidden; fi
+
 out="$(printf '%s\n' "$rows" | fzf \
-  --ansi --layout=reverse --border --height="$hgt" \
+  --ansi --layout=reverse --border --height="$hgt" --info="$info" \
   --delimiter=$'\t' --with-nth=1 --nth=1 \
-  --prompt='hop > ' --header="$hdr" \
+  --prompt='hop > ' "${hdrarg[@]}" \
   --query="${1:-}" \
   "${binds[@]}" \
   --expect=ctrl-a,ctrl-e,ctrl-u,ctrl-p \

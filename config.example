@@ -1,0 +1,19 @@
+# hop settings. Read from /etc/hop/config, then ~/.config/hop/config, with the
+# later file winning. `key = value`, # starts a comment. Every key has a
+# working default, so no file at all is fine.
+
+# Strip the chrome: no category column, no key hints, no match counter. Just
+# the prompt and the list. Shorthand for setting `column` and `header` off;
+# either of those still wins where you set it explicitly.
+#   minimal = on
+
+# Category column down the left.
+#   auto  fit it to the terminal, shedding detail as it narrows (default)
+#   on    always show it
+#   off   never show it; categories fall back to a one-line strip of hotkeys
+#
+# ^o toggles the column within a session whatever this says.
+#   column = auto
+
+# The two header lines: the category strip and the key hints.
+#   header = on

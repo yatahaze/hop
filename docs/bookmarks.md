@@ -98,6 +98,25 @@ enter hop · ctrl-a claude · ctrl-e edit · 3 not on this machine (--all)
 
 One list can therefore serve machines with different layouts.
 
+## Settings
+
+Optional, in `/etc/hop/config` then `~/.config/hop/config`, later file winning
+— the same system-then-user shape as bookmarks. `key = value`, `#` comments.
+Every key has a working default, so no file is fine. See
+[config.example](../config.example).
+
+| Key | Values | Does |
+|---|---|---|
+| `minimal` | `on`, `off` | strip the chrome: no column, no hints, no counter |
+| `column` | `auto`, `on`, `off` | the category column; `auto` fits it to the terminal |
+| `header` | `on`, `off` | the category strip and key hints |
+
+`minimal = on` is shorthand for the other two off, so it is a default rather
+than a lock: set `column = on` alongside it and the column comes back.
+
+`column = off` still shows the hotkey strip, so you can see what `tab` and
+`alt-1` will do. `minimal = on` does not — it assumes you know.
+
 ## Keys
 
 | Key | Does |

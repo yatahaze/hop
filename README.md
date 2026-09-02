@@ -45,7 +45,7 @@ path and leave you where you were.
 | | |
 |---|---|
 | [Install](docs/install.md) | manual install, why the shell function, uninstall |
-| [Bookmarks](docs/bookmarks.md) | format, where lists live, how they merge |
+| [Bookmarks](docs/bookmarks.md) | format, where lists live, how they merge, settings |
 | [Roadmap](ROADMAP.md) | Windows, auto-discovery |
 | [tools/screenshot](tools/screenshot) | regenerate the images above |
 
