@@ -33,7 +33,7 @@ path and leave you where you were.
 
 | | |
 |---|---|
-| [Install](docs/install.md) | manual install, many machines, uninstall |
+| [Install](docs/install.md) | manual install, why the shell function, uninstall |
 | [Bookmarks](docs/bookmarks.md) | format, where lists live, how they merge |
 | [Roadmap](ROADMAP.md) | Windows, auto-discovery |
 
