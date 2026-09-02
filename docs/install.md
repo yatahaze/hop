@@ -18,22 +18,35 @@ Open a new shell, run `hop`.
 
 ## Why a shell function
 
-A program cannot change its parent shell's directory. So `hop` prints a
-directory and nothing else, and the function `cd`s to what it printed:
+A program cannot change its parent shell's directory, nor activate a
+virtualenv in it. So `hop` prints the directory on line 1 and, when it finds
+one, a virtualenv activate script on line 2, and the function does both:
 
 ```bash
 hop() {
-  local d
-  d="$(command hop "$@")" || return $?
-  [ -n "$d" ] && cd "$d"
+  local out d v
+  out="$(HOP_WRAPPED=1 command hop "$@")" || return $?
+  [ -n "$out" ] || return 0
+  d="${out%%$'\n'*}"
+  v="${out#*$'\n'}"; [ "$v" = "$out" ] && v=""
+  [ -n "$d" ] || return 0
+  cd "$d" || return $?
+  if [ -n "$v" ] && [ -r "$v" ]; then
+    if [ -n "${VIRTUAL_ENV:-}" ] && command -v deactivate >/dev/null 2>&1; then deactivate; fi
+    . "$v"
+  fi
 }
 ```
+
+`install.sh` writes this between `# >>> hop >>>` markers, so re-running it
+replaces the block rather than appending a second copy.
 
 Every action the picker runs (editor, git, an agent) writes to `/dev/tty`
 instead of stdout, so it never breaks that.
 
 Install `hop` on `PATH` without the function and it will print a path and
-leave you where you were.
+leave you where you were. It notices, and says so on stderr, rather than
+looking silently broken.
 
 ## By hand
 
@@ -46,8 +59,16 @@ shell rc. For fish, use `~/.config/fish/functions/hop.fish`:
 
 ```fish
 function hop
-    set -l d (command hop $argv); or return $status
-    test -n "$d"; and cd $d
+    set -l out (env HOP_WRAPPED=1 command hop $argv); or return $status
+    test (count $out) -gt 0; or return 0
+    cd $out[1]; or return $status
+    if test (count $out) -ge 2
+        set -l af (dirname $out[2])/activate.fish
+        if set -q VIRTUAL_ENV; and functions -q deactivate
+            deactivate
+        end
+        test -r $af; and source $af
+    end
 end
 ```
 

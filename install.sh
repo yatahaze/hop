@@ -19,32 +19,63 @@ else
   echo "kept existing $CONFIG_DIR/bookmarks"
 fi
 
-# A child process cannot cd its parent shell, so `hop` must be a function that
-# cds to whatever the script prints. Both shells get the same contract.
+# A child process cannot cd its parent shell, nor activate a virtualenv in it,
+# so both have to happen out here. hop prints the directory on line 1 and an
+# optional virtualenv activate script on line 2.
+#
+# Delimited so re-running this replaces the block instead of appending a second
+# copy, and so removing it is a clean sed.
 add_bash() {
-  local rc="$HOME/.bashrc"
-  grep -q 'hop shell wrapper' "$rc" 2>/dev/null && { echo "bash wrapper already in $rc"; return; }
+  local rc="$HOME/.bashrc" tmp
+  if grep -q '^# >>> hop >>>' "$rc" 2>/dev/null; then
+    tmp="$(mktemp)"
+    sed '/^# >>> hop >>>$/,/^# <<< hop <<<$/d' "$rc" > "$tmp" && cat "$tmp" > "$rc" && rm -f "$tmp"
+    echo "replaced existing bash wrapper in $rc"
+  else
+    # tidy up the pre-marker wrapper shipped by earlier versions
+    if grep -q '^# hop shell wrapper' "$rc" 2>/dev/null; then
+      tmp="$(mktemp)"
+      sed '/^# hop shell wrapper/,/^}$/d' "$rc" > "$tmp" && cat "$tmp" > "$rc" && rm -f "$tmp"
+      echo "removed pre-marker wrapper from $rc"
+    fi
+    echo "added bash wrapper to $rc"
+  fi
   cat >> "$rc" <<'WRAP'
-
-# hop shell wrapper. The script prints a directory, we cd to it
+# >>> hop >>>
 hop() {
-  local d
-  d="$(command hop "$@")" || return $?
-  [ -n "$d" ] && cd "$d"
+  local out d v
+  out="$(HOP_WRAPPED=1 command hop "$@")" || return $?
+  [ -n "$out" ] || return 0
+  d="${out%%$'\n'*}"
+  v="${out#*$'\n'}"; [ "$v" = "$out" ] && v=""
+  [ -n "$d" ] || return 0
+  cd "$d" || return $?
+  if [ -n "$v" ] && [ -r "$v" ]; then
+    if [ -n "${VIRTUAL_ENV:-}" ] && command -v deactivate >/dev/null 2>&1; then deactivate; fi
+    . "$v"
+  fi
 }
+# <<< hop <<<
 WRAP
-  echo "added bash wrapper to $rc"
 }
 
 add_fish() {
   local d="${XDG_CONFIG_HOME:-$HOME/.config}/fish/functions"
-  [ -d "${XDG_CONFIG_HOME:-$HOME/.config}/fish" ] || return
+  [ -d "${XDG_CONFIG_HOME:-$HOME/.config}/fish" ] || return 0
   mkdir -p "$d"
   cat > "$d/hop.fish" <<'WRAP'
-# hop shell wrapper. The script prints a directory, we cd to it
 function hop
-    set -l d (command hop $argv); or return $status
-    test -n "$d"; and cd $d
+    set -l out (env HOP_WRAPPED=1 command hop $argv); or return $status
+    test (count $out) -gt 0; or return 0
+    cd $out[1]; or return $status
+    if test (count $out) -ge 2
+        # fish needs its own activate script, not the POSIX one
+        set -l af (dirname $out[2])/activate.fish
+        if set -q VIRTUAL_ENV; and functions -q deactivate
+            deactivate
+        end
+        test -r $af; and source $af
+    end
 end
 WRAP
   echo "wrote $d/hop.fish"

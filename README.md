@@ -5,8 +5,9 @@ pick, `enter` lands you there. Type to filter if you would rather.
 
 ![hop listing bookmarked directories, filtered by typing, with a git status preview of the selected repo](docs/demo.png)
 
-`enter` puts your shell in that directory. Other keys act on it in place: open
-in `$EDITOR`, pull, push, start an agent.
+`enter` puts your shell in that directory, and activates the project's
+virtualenv if it finds one. Other keys act on it in place: open in `$EDITOR`,
+pull, push, start an agent.
 
 Bash and `fzf`. No runtime, no build. Works over SSH.
 

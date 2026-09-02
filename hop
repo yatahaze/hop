@@ -74,6 +74,21 @@ parse() {
 # A bookmark may point at a file (~/.bashrc); you hop to its directory.
 destdir() { if [ -d "$1" ]; then printf '%s' "$1"; else dirname "$1"; fi; }
 
+# Find a virtualenv to activate for a directory. Walks up because the venv
+# usually sits beside the project rather than inside the package dir it points
+# at. Stops at $HOME so it never escapes into shared parents.
+venv_for() {
+  local d="$1" c
+  while [ -n "$d" ] && [ "$d" != "/" ]; do
+    for c in venv .venv env; do
+      if [ -r "$d/$c/bin/activate" ]; then printf '%s' "$d/$c/bin/activate"; return 0; fi
+    done
+    [ "$d" = "$HOME" ] && break
+    d="$(dirname "$d")"
+  done
+  return 1
+}
+
 # Column widths come from the whole set, not the filtered subset, so cycling
 # between categories does not make the list jitter. HOP_ALL and HOP_SHOWPATH
 # are exported so the reload subprocess renders rows identically to the parent.
@@ -129,6 +144,10 @@ if [ "${1:-}" = "--preview" ]; then
     git -C "$d" -c color.ui=always log --oneline -5 2>/dev/null
     echo
   fi
+  if v="$(venv_for "$d")"; then
+    case "$v" in "$HOME"/*) v="~${v#"$HOME"}" ;; esac
+    printf 'venv: %s\n\n' "$v"
+  fi
   ls -A --color=always "$d" 2>/dev/null | head -30
   exit 0
 fi
@@ -169,6 +188,9 @@ esac
 
 [ -n "$(sources)" ] || die "no bookmarks in $SYS_DIR or $USER_DIR. Run: hop --edit"
 command -v fzf >/dev/null || die "fzf is not on PATH"
+# Without the shell function this prints a path and leaves you put, which reads
+# as "hop is broken" rather than "hop is not installed properly".
+[ -n "${HOP_WRAPPED:-}" ] || printf 'hop: shell function not loaded, so this will print a path instead of taking you there.\n     Run: source ~/.bashrc   (or open a new shell)\n' >&2
 
 # --- layout -----------------------------------------------------------------
 # The preview costs half the width, which a phone terminal does not have, so
@@ -230,4 +252,11 @@ case "$key" in
   ctrl-p) ( cd "$dir" && git push )                   </dev/tty >/dev/tty 2>&1 ;;
 esac
 
+# Line 1 is where to go; optional line 2 is a virtualenv for the wrapper to
+# activate. Both have to happen in the parent shell, so neither can be done here.
 printf '%s\n' "$dir"
+# Not a pipeline: with pipefail a failed lookup would become hop's exit status,
+# and the wrapper would abort before the cd for every bookmark without a venv.
+v="$(venv_for "$dir" 2>/dev/null || true)"
+[ -n "$v" ] && printf '%s\n' "$v"
+exit 0

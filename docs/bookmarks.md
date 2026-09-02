@@ -60,6 +60,24 @@ fifty entries.
 
 Without this, creating a personal file would hide the system one completely.
 
+## Virtualenvs
+
+Hopping to a bookmark activates a virtualenv if one is found, and deactivates
+whatever was active first, so switching projects switches interpreters.
+
+The search starts at the bookmark's directory and walks up, stopping at
+`$HOME`. In each directory it looks for `venv/`, `.venv/`, then `env/`.
+Nearest wins, which matters when a repo has its own `.venv` inside a tree that
+also has one beside it.
+
+```
+~/src/webapp/.venv/bin/activate     <- bookmark ~/src/webapp uses this
+~/src/venv/bin/activate                (not this)
+```
+
+Nothing to configure, and no venv means no activation. The preview pane names
+the venv that would activate.
+
 ## Paths that do not exist
 
 Hidden, and counted in the header:
