@@ -6,8 +6,12 @@ lands in the image is what the terminal actually drew, not an approximation.
 
     tmux capture-pane -pet <session> | tools/ansi2png.py out.png
 
-Needs Pillow. Any DejaVu Sans Mono on the system will do; see FONT_CANDIDATES.
+Needs Pillow. Any DejaVu Sans Mono on the system will do; see FONT_CANDIDATES,
+or point ANSI2PNG_FONT at one, with {} where -Bold goes:
+
+    ANSI2PNG_FONT=~/fonts/DejaVuSansMono{}.ttf
 """
+import os
 import re
 import subprocess
 import sys
@@ -24,6 +28,8 @@ FONT_CANDIDATES = [
     "/usr/share/fonts/texlive-dejavu/DejaVuSansMono{}.ttf",        # texlive
     "/Library/Fonts/DejaVuSansMono{}.ttf",                         # macOS
 ]
+if os.environ.get("ANSI2PNG_FONT"):
+    FONT_CANDIDATES.insert(0, os.path.expanduser(os.environ["ANSI2PNG_FONT"]))
 SIZE, PAD, LEAD = 15, 18, 4
 BG, FG = (24, 24, 27), (212, 212, 216)
 

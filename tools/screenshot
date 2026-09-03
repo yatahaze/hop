@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regenerate docs/demo.png and docs/demo-narrow.png.
+# Regenerate docs/demo.png, docs/demo-menu.png and docs/demo-narrow.png.
 #
 # Builds a throwaway home with fake repos, drives the real picker inside tmux
 # at two widths, and renders what the terminal actually drew. The fixture is
@@ -8,15 +8,20 @@
 #
 #   tools/screenshot
 #
-# Needs tmux, git, fzf and Pillow.
+# Needs git, fzf, Pillow, and tmux. Without tmux it drives the picker through
+# a pty instead (tools/ptyshot.py), which needs the pyte module.
 set -euo pipefail
 
 cd "$(dirname "$(readlink -f "$0")")/.."
 ROOT="$PWD"
 
-for c in tmux git fzf; do
+for c in git fzf; do
   command -v "$c" >/dev/null || { echo "screenshot: needs $c" >&2; exit 1; }
 done
+if command -v tmux >/dev/null; then CAPTURE=tmux
+elif python3 -c 'import pyte' 2>/dev/null; then CAPTURE=pty
+else echo "screenshot: needs tmux, or pyte for python3" >&2; exit 1
+fi
 
 HOME_DIR="$(mktemp -d)"
 trap 'rm -rf "$HOME_DIR"; tmux kill-session -t hop-shot 2>/dev/null || true' EXIT
@@ -68,6 +73,12 @@ EOF
 # --- capture ----------------------------------------------------------------
 shoot() {  # shoot <cols> <rows> <out.png> [keys...]
   local cols="$1" rows="$2" out="$3"; shift 3
+  if [ "$CAPTURE" = pty ]; then
+    python3 "$ROOT/tools/ptyshot.py" "$cols" "$rows" "$@" -- \
+      env HOME="$HOME_DIR" HOP_CONFIG="$HOME_DIR/bookmarks" HOP_WRAPPED=1 "$ROOT/hop" \
+      | "$ROOT/tools/ansi2png.py" "$out"
+    return
+  fi
   tmux kill-session -t hop-shot 2>/dev/null || true
   tmux new-session -d -s hop-shot -x "$cols" -y "$rows" \
     "HOME='$HOME_DIR' HOP_CONFIG='$HOME_DIR/bookmarks' HOP_WRAPPED=1 '$ROOT/hop'"
@@ -78,7 +89,9 @@ shoot() {  # shoot <cols> <rows> <out.png> [keys...]
   tmux kill-session -t hop-shot 2>/dev/null || true
 }
 
-# Tab selects the first category: the point of both images is the column
-# filtering, not the unfiltered list.
+# Tab selects the first category: the point of the list images is the column
+# filtering, not the unfiltered list. Enter on the first row opens the action
+# menu; it takes over the screen, so that one is shot in a smaller terminal.
 shoot 92 14 "$ROOT/docs/demo.png"        Tab
+shoot 60 10 "$ROOT/docs/demo-menu.png"   Tab Enter
 shoot 44 12 "$ROOT/docs/demo-narrow.png" Tab
