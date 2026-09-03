@@ -39,8 +39,8 @@ repo() {  # repo <dir> <file> <commit subject>
   git -C "$HOME_DIR/$1" commit -qm "$3"
 }
 mkdir -p "$HOME_DIR"/src/{webapp,api,cli,webapp-docs,api-docs} \
-         "$HOME_DIR"/.config/{nvim,tmux} "$HOME_DIR"/notes/journal "$HOME_DIR"/dotfiles
-mkdir -p "$HOME_DIR/.config/hop"
+         "$HOME_DIR"/.config/{nvim,tmux,nginx,hop} "$HOME_DIR"/notes/journal \
+         "$HOME_DIR"/dotfiles "$HOME_DIR"/.ssh
 repo src/webapp src/settings.py "fix pagination on the results page"
 repo src/api    main.go         "add rate limiting"
 repo dotfiles   bashrc          "tidy prompt"
@@ -59,7 +59,7 @@ webapp-docs     ~/src/webapp-docs
 api-docs        ~/src/api-docs
 
 [configs]
-*nginx          /etc/nginx
+*nginx          ~/.config/nginx
 nvim            ~/.config/nvim
 tmux            ~/.config/tmux
 dotfiles        ~/dotfiles
@@ -68,6 +68,24 @@ dotfiles        ~/dotfiles
 todo            ~/notes
 journal         ~/notes/journal
 EOF
+
+# A few hosts, so the ssh side of the picker is in the picture too.
+cat > "$HOME_DIR/.ssh/config" <<'EOF'
+# [acme]
+Host acme-web
+    HostName 198.51.100.10
+    User deploy
+
+Host acme-db
+    HostName 198.51.100.11
+    User deploy
+
+# [home]
+Host nas
+    HostName 192.168.1.20
+    User ryan
+EOF
+chmod 600 "$HOME_DIR/.ssh/config"
 
 # --- capture ----------------------------------------------------------------
 shoot() {  # shoot <cols> <rows> <out.png> [keys...]
@@ -88,11 +106,12 @@ shoot() {  # shoot <cols> <rows> <out.png> [keys...]
   tmux kill-session -t hop-shot 2>/dev/null || true
 }
 
-# The README images are the defaults: no column, tab lighting the first
-# category in the strip. Enter on the first row opens the action menu; it
-# takes over the screen, so that one is shot in a smaller terminal.
-shoot 92 14 "$ROOT/docs/demo.png"        Tab
-shoot 60 10 "$ROOT/docs/demo-menu.png"   Tab Enter
+# The README images are the defaults: no column, everything in one list,
+# hosts beside bookmarks, tall enough to show all of it. Enter on the first
+# row opens the action menu; it takes over the screen, so that one is shot
+# in a smaller terminal.
+shoot 92 24 "$ROOT/docs/demo.png"
+shoot 60 10 "$ROOT/docs/demo-menu.png"   Enter
 
 # The layout doc is about the column, which is off by default; ask for it.
 echo "column = auto" > "$HOME_DIR/.config/hop/config"

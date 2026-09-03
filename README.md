@@ -2,7 +2,7 @@
 
 Bookmarks. Directories and ssh servers. Pick one, choose an option, done.
 
-![the picker](docs/demo.png)
+![the picker: bookmarks in three categories and ssh hosts, in one list](docs/demo.png)
 
 `enter` on a row:
 
