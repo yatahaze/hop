@@ -460,9 +460,12 @@ function hop {
   [IO.File]::WriteAllText($previewCmd, $script:PreviewCmd, $script:Utf8)
   $n = $cycle.Count + 1
 
-  $hdr = if ($hasSsh -and $hasDir) { 'tab bookmarks/ssh · ' } else { 'tab category · ' }
-  $hdr += if ($cols -ge 76) { 'enter cd/ssh · ^e edit · ^a claude · ^u pull · ^p push · ^o preview' }
-          else               { 'enter cd/ssh · ^e edit · ^a claude' }
+  # The separator is spelled as a code point: a literal would turn into two
+  # characters wherever the file is read as ANSI instead of UTF-8.
+  $dot = [string][char]0xB7
+  $hdr = if ($hasSsh -and $hasDir) { "tab bookmarks/ssh $dot " } else { "tab category $dot " }
+  $hdr += if ($cols -ge 76) { "enter cd/ssh $dot ^e edit $dot ^a claude $dot ^u pull $dot ^p push $dot ^o preview" }
+          else               { "enter cd/ssh $dot ^e edit $dot ^a claude" }
   if ($st.missing -gt 0) { $hdr += "`n$($st.missing) not here (--all)" }
 
   # `minimal = on` is shorthand for `header = off`; the explicit key still wins.
