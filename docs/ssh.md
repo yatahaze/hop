@@ -77,7 +77,7 @@ whatever category was current.
 hop --ssh-edit
 ```
 
-opens the config in `$EDITOR`. `^e` on a host row in the picker does the
+opens the config in `$EDITOR`. `edit` in a host's action menu does the
 same. Neither asks you to remember where the file is.
 
 If your `~/.ssh/config` is nothing but an `Include` of a file that lives

@@ -3,8 +3,8 @@
 ## Windows: the rest of the picker
 
 `hop.psm1` covers picking, `cd`, virtualenvs, the preview, ssh hosts, `tab`
-and the `^a` `^e` `^u` `^p` actions, reading the same files. Missing: the
-category column, `alt-N` and `^t` pinning.
+and the action menu, reading the same files. Missing: the category column,
+`alt-N` and `^t` pinning.
 
 All of these work in the bash version by fzf re-invoking the script as a
 subprocess on every keypress, and `pwsh` takes a few hundred milliseconds to

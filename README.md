@@ -6,9 +6,11 @@ picker. Arrows pick, `enter` lands you there: a `cd` for a directory, an
 
 ![hop: a category column on the left listing repos, configs and notes with counts, repos highlighted as the active one, and its five bookmarks listed in the main area](docs/demo.png)
 
-`enter` puts your shell in that directory, and activates the project's
-virtualenv if it finds one. Other keys act on it in place: open in `$EDITOR`,
-pull, push, start an agent.
+`enter` opens a small menu of what to do there: go, start claude, open in
+`$EDITOR`, pull, push. The first row is the default, so `enter` twice puts
+your shell in that directory, activating the project's virtualenv if it
+finds one, and `enter`, down, `enter` starts claude there. No chords to
+remember. You can reorder the menu, or prune it, in the settings.
 
 Hosts come from `~/.ssh/config`, so there is nothing to maintain twice. The
 row shows `user@host` beside the alias, so you can find the box by its IP

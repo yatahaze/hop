@@ -240,7 +240,7 @@ ssh_import() {
 
 parse_merged() {
   local f
-  { ssh_source; while IFS= read -r f; do parse_one "$f"; done < <(sources); } |
+  { while IFS= read -r f; do parse_one "$f"; done < <(sources); ssh_source; } |
     awk -F'\t' '{ k=$2 FS $3
                   if (!(k in seen)) { seen[k]=1; order[++n]=k }
                   val[k]=$0 }
@@ -281,6 +281,65 @@ venv_for() {
   return 1
 }
 
+# --- actions ----------------------------------------------------------------
+# enter opens a small menu of what to do with the entry, in the middle of the
+# screen, rather than a chord per action that nobody remembers. The first row
+# is the default, so `enter enter` takes you there and `enter down enter`
+# starts claude. `actions` and `ssh_actions` in the settings order the rows,
+# and drop any you never use. pull and push only appear for a git repo.
+is_repo() { git -C "$1" rev-parse --git-dir >/dev/null 2>&1; }
+
+action_row() {   # action_row <name> <color> <description>
+  printf '\033[%sm%-7s\033[0m \033[2m%s\033[0m\t%s\n' "$2" "$1" "$3" "$1"
+}
+
+action_rows() {  # action_rows <dir|ssh> <dir>
+  local kind="$1" dir="$2" a list ed
+  ed="${EDITOR:-vi}"; ed="${ed%% *}"; ed="$(basename "$ed")"
+  if [ "$kind" = ssh ]; then list="$(setting ssh_actions "ssh claude edit")"
+  else list="$(setting actions "cd claude edit pull push")"; fi
+  for a in ${list//,/ }; do
+    case "$kind/$a" in
+      dir/cd)     action_row cd     32 "go there" ;;
+      dir/claude) action_row claude 35 "start claude there" ;;
+      dir/edit)   action_row edit   34 "open in $ed" ;;
+      dir/pull)   is_repo "$dir" && action_row pull 33 "git pull" ;;
+      dir/push)   is_repo "$dir" && action_row push 33 "git push" ;;
+      ssh/ssh)    action_row ssh    32 "connect" ;;
+      ssh/claude) action_row claude 35 "connect, then claude" ;;
+      ssh/edit)   action_row edit   34 "open the ssh config" ;;
+    esac
+  done
+  return 0
+}
+
+# A boxed list centred on the screen, sized to its rows: fzf's margins do the
+# centring, and its full-screen mode gives the terminal back untouched when
+# the box closes. Prints the chosen action, or nothing for escape.
+menu() {         # menu <dir|ssh> <name> <dir>
+  local rows n lines cols w h t l b
+  rows="$(action_rows "$1" "$3")"
+  [ -n "$rows" ] || return 0
+  n="$(printf '%s\n' "$rows" | grep -c .)"
+  read -r lines cols < <(stty size </dev/tty 2>/dev/null) || true
+  [ "${lines:-0}" -gt 0 ] || lines="$(tput lines 2>/dev/null || echo 24)"
+  [ "${cols:-0}" -gt 0 ]  || cols="$(tput cols 2>/dev/null || echo 80)"
+  w=40; [ "$w" -gt "$cols" ] && w="$cols"
+  # Rows, the prompt line, and the two border lines. hidden info still draws
+  # its separator rule, which would eat the last row, hence no-separator.
+  h=$(( n + 3 ))
+  l=$(( (cols - w) / 2 )); t=$(( (lines - h) / 2 )); b=$(( lines - h - t ))
+  [ "$t" -lt 0 ] && t=0; [ "$b" -lt 0 ] && b=0
+  printf '%s\n' "$rows" | fzf \
+    --ansi --layout=reverse --info=hidden --no-separator --prompt='> ' \
+    --delimiter=$'\t' --with-nth=1 --nth=1 \
+    --border=rounded --border-label=" $2 " --border-label-pos=2 \
+    --margin="$t,$l,$b,$l" \
+    --color=border:cyan,label:cyan:bold,pointer:cyan,prompt:cyan \
+    | cut -f2
+  return 0
+}
+
 # Column widths come from the whole set, not the filtered subset, so cycling
 # between categories does not make the list jitter. HOP_ALL and HOP_SHOWPATH
 # are exported so the reload subprocess renders rows identically to the parent.
@@ -289,6 +348,7 @@ venv_for() {
 # category name. Within the ssh section the ssh/ prefix is dropped from the
 # category column, since every row would carry it.
 rows_for() {
+  [ "${HOP_STRIP:-0}" = 1 ] && strip_for "${1:-}"
   parse | awk -F'\t' -v all="${HOP_ALL:-0}" -v home="$HOME" \
                      -v only="${1:-}" -v showpath="${HOP_SHOWPATH:-1}" '
     { pn[NR]=$1; cat[NR]=$2; nm[NR]=$3; pa[NR]=$4
@@ -316,6 +376,37 @@ rows_for() {
 }
 
 categories() { parse_merged | cut -f2 | awk '!seen[$0]++'; }
+
+# The tab strip: the sections as tabs with the active one lit, then the
+# categories alt-N reaches, lit instead when the filter is one of those. It
+# is the first row of every list fzf is given, shown with --header-lines, so
+# it follows every tab press in any fzf version; a header a bind can rewrite
+# needs a newer fzf than some machines have.
+strip_tab() {    # strip_tab <filter> <label>, lit when the filter is current
+  if [ "$1" = "$cur" ]; then printf '\033[1;7;36m %s \033[0m' "$2"
+  else                       printf '\033[2m %s \033[0m' "$2"; fi
+}
+strip_for() {    # strip_for <current filter>
+  local cur="$1" s a="" c i=0 len alen=0
+  s="$(strip_tab "" all)"; len=5
+  if [ "$(sections | head -1)" = "@bookmarks" ]; then
+    s="$s$(strip_tab @bookmarks bookmarks)$(strip_tab @ssh ssh)"; len=$(( len + 16 ))
+    while IFS= read -r c; do
+      [ -z "$c" ] && continue; i=$(( i + 1 )); [ "$i" -gt 9 ] && break
+      a="$a$(strip_tab "$c" "$i:$c")"; alen=$(( alen + ${#c} + 4 ))
+    done < <(categories)
+    # The category list is the first thing to go when the strip will not fit;
+    # the active category, if there is one, stays so you can see it.
+    if [ $(( len + 5 + alen )) -le "${HOP_STRIPW:-80}" ]; then s="$s "$'\033[2m'"alt"$'\033[0m'"$a"
+    elif [ -n "$cur" ] && [ "${cur#@}" = "$cur" ]; then s="$s$(strip_tab "$cur" "$cur")"; fi
+  else
+    while IFS= read -r c; do
+      [ -z "$c" ] && continue; i=$(( i + 1 )); [ "$i" -gt 9 ] && break
+      s="$s$(strip_tab "$c" "$i:$c")"
+    done < <(categories)
+  fi
+  printf '%s\n' "$s"
+}
 
 # What tab walks. Bookmarks and ssh hosts are different enough that you want
 # one or the other, so with both present tab goes all, bookmarks, ssh. With
@@ -466,9 +557,10 @@ In the picker:
   tab / shift-tab   all, bookmarks, ssh hosts (or the categories, with one kind)
   alt-1..9          jump straight to a category
   type              filter, category names match too
-  enter             cd there, or ssh there
+  enter             open the actions for it: go there, claude, edit, pull,
+                    push. The first is the default, so enter twice goes there
   ^t                pin or unpin the selected entry (kept in ~/.config/hop/pins)
-  ^e edit    ^a claude    ^u git pull    ^p git push    ^o toggle column
+  ^o                show or hide the category column
 
 Hosts come from ~/.ssh/config, Include lines followed. `# [name]` comments
 group them. Set `ssh_config = <file>` or `ssh_config = off` in
@@ -530,6 +622,8 @@ else                          pvw="hidden,left,13,border-right"; listw="$cols"; 
 # The path column is the first thing to go when it will not fit.
 if [ "$listw" -ge 56 ]; then export HOP_SHOWPATH=1; else export HOP_SHOWPATH=0; fi
 export HOP_ALL="$show_all"
+# The tab strip rides on the list when the column is not there to show it.
+case $pvw in hidden*) export HOP_STRIP=1 HOP_STRIPW="$listw" ;; *) export HOP_STRIP=0 ;; esac
 
 missing="$(parse | awk -F'\t' -v all="$show_all" '{ if (all=="0" && $4 !~ /^ssh:\/\// && system("test -e \"" $4 "\"")!=0) m++ } END { print m+0 }')"
 rows="$(rows_for "")"
@@ -542,66 +636,63 @@ binds=( --bind "ctrl-o:toggle-preview"
         --bind "ctrl-t:execute-silent($SELF --pin {3} {4})+reload($SELF --cycle +0 $state)"
         --bind "tab:reload($SELF --cycle +1 $state)"
         --bind "btab:reload($SELF --cycle -1 $state)" )
-strip=""; i=0
+i=0
 while IFS= read -r c; do
   [ -z "$c" ] && continue
   i=$(( i + 1 )); [ "$i" -gt 9 ] && break
   binds+=( --bind "alt-$i:reload($SELF --cycle =$i $state)" )
-  strip="$strip${strip:+ · }$i:$c"
 done < <(categories)
-# With both kinds present tab switches between them, and the strip says so.
-if [ "$(sections | head -1)" = "@bookmarks" ]; then strip="tab bookmarks/ssh · alt $strip"
-else strip="tab · $strip"; fi
 
-case "$pvw" in
-  hidden*) hdr="$strip"$'\n'"enter cd · ^t pin · ^e edit · ^a claude" ;;
-  *)       hdr="enter cd · ^t pin · ^e edit · ^a claude · ^u pull · ^p push"
-           [ "$listw" -ge 62 ] || hdr="enter cd · ^t pin · ^e edit · ^a claude"
-           [ "$listw" -ge 36 ] || hdr="enter cd · ^t pin" ;;
-esac
+# The hints fit at any width now that enter is the only way in.
+hdr="enter · ^t pin"
 [ "$missing" -gt 0 ] && hdr="$hdr"$'\n'"$missing not here (--all)"
 
 info=inline; hdrarg=(--header "$hdr")
 if [ "$show_header" = off ]; then hdrarg=(); info=hidden; fi
 
-out="$(printf '%s\n' "$rows" | fzf \
-  --ansi --layout=reverse --border --height="$hgt" --info="$info" \
-  --delimiter=$'\t' --with-nth=1 --nth=1 \
-  --prompt='hop > ' "${hdrarg[@]}" \
-  --query="${1:-}" \
-  "${binds[@]}" \
-  --expect=ctrl-a,ctrl-e,ctrl-u,ctrl-p \
-  --preview="'$SELF' --pane {2} $state {4}" --preview-window="$pvw")"
+# enter opens the action menu for the row. Escape there comes back here with
+# the query and the section intact, so a wrong row costs one keypress.
+query="${1:-}"
+while :; do
+  out="$(printf '%s\n' "$rows" | fzf \
+    --ansi --layout=reverse --border --height="$hgt" --info="$info" \
+    --delimiter=$'\t' --with-nth=1 --nth=1 --header-lines="$HOP_STRIP" \
+    --prompt='hop > ' "${hdrarg[@]}" \
+    --print-query --query="$query" \
+    "${binds[@]}" \
+    --preview="'$SELF' --pane {2} $state {4}" --preview-window="$pvw")"
 
-[ -n "$out" ] || exit 0
-key="$(printf '%s' "$out" | sed -n 1p)"
-sel="$(printf '%s' "$out" | sed -n 2p)"
-[ -n "$sel" ] || exit 0
+  query="$(printf '%s' "$out" | sed -n 1p)"
+  sel="$(printf '%s' "$out" | sed -n 2p)"
+  [ -n "$sel" ] || exit 0
 
-# Field 2 specifically: the row also carries category and name after it, for ^t.
-target="$(printf '%s' "$sel" | cut -f2)"
+  # Field 2 is the path; the row also carries category and name after it.
+  target="$(printf '%s' "$sel" | cut -f2)"
+  name="$(printf '%s' "$sel" | cut -f4)"
+  case $target in
+    ssh://*) kind=ssh; dir="" ;;
+    *)       kind=dir; dir="$(destdir "$target")" ;;
+  esac
+
+  act="$(menu "$kind" "$name" "$dir")"
+  [ -n "$act" ] && break
+  rows="$(rows_for "$(cat "$state")")"
+done
 
 # An ssh host: connect on the tty and print nothing, so the wrapper stays put.
-# The alias is the name column; the config supplies everything else. ^e opens
-# the config, since that is where the entry lives.
-case $target in
-  ssh://*)
-    alias="$(printf '%s' "$sel" | cut -f4)"
-    case "$key" in
-      "")     ssh "$alias"                                            </dev/tty >/dev/tty 2>&1 ;;
-      ctrl-e) ${EDITOR:-vi} "$(ssh_edit_target "$(ssh_config_path)")" </dev/tty >/dev/tty 2>&1 ;;
-    esac
-    exit 0 ;;
-esac
-
-dir="$(destdir "$target")"
-
-# Actions take the tty; stdout stays clean so the wrapper can still cd.
-case "$key" in
-  ctrl-a) ( cd "$dir" && claude )                     </dev/tty >/dev/tty 2>&1 ;;
-  ctrl-e) ( cd "$dir" && ${EDITOR:-vi} "$target" )    </dev/tty >/dev/tty 2>&1 ;;
-  ctrl-u) ( cd "$dir" && git pull )                   </dev/tty >/dev/tty 2>&1 ;;
-  ctrl-p) ( cd "$dir" && git push )                   </dev/tty >/dev/tty 2>&1 ;;
+# The alias is the name column; the config supplies everything else. `edit`
+# opens the config, since that is where the entry lives. claude runs through
+# a login shell on the far side so it is found wherever the profile puts it.
+case "$kind/$act" in
+  ssh/ssh)    ssh "$name"                                               </dev/tty >/dev/tty 2>&1; exit 0 ;;
+  ssh/claude) ssh -t "$name" '$SHELL -lic claude'                       </dev/tty >/dev/tty 2>&1; exit 0 ;;
+  ssh/edit)   ${EDITOR:-vi} "$(ssh_edit_target "$(ssh_config_path)")"  </dev/tty >/dev/tty 2>&1; exit 0 ;;
+  # Directory actions take the tty; stdout stays clean so the wrapper can
+  # still cd once they return.
+  dir/claude) ( cd "$dir" && claude )                     </dev/tty >/dev/tty 2>&1 ;;
+  dir/edit)   ( cd "$dir" && ${EDITOR:-vi} "$target" )    </dev/tty >/dev/tty 2>&1 ;;
+  dir/pull)   ( cd "$dir" && git pull )                   </dev/tty >/dev/tty 2>&1 ;;
+  dir/push)   ( cd "$dir" && git push )                   </dev/tty >/dev/tty 2>&1 ;;
 esac
 
 # Line 1 is where to go; optional line 2 is a virtualenv for the wrapper to

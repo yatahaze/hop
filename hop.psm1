@@ -218,10 +218,10 @@ function Import-HopSshConfig([string]$cfg, [string]$file, $piped) {
 # source order within each group.
 function Get-HopBookmarks {
   $merged = [ordered]@{}
-  foreach ($b in Get-HopSshHosts) { $merged["$($b.Cat)`t$($b.Name)"] = $b }
   foreach ($f in Get-HopSources) {
     foreach ($b in Read-HopFile $f) { $merged["$($b.Cat)`t$($b.Name)"] = $b }
   }
+  foreach ($b in Get-HopSshHosts) { $merged["$($b.Cat)`t$($b.Name)"] = $b }
   $all = @($merged.Values)
   @($all | Where-Object Pin) + @($all | Where-Object { -not $_.Pin })
 }
@@ -280,8 +280,9 @@ hop --ssh-import [file] replace your ssh config from the clipboard, a file, or
 In the picker:
   tab / shift-tab   all, bookmarks, ssh hosts (or the categories, with one kind)
   type              filter, category names match too (`hop web` pre-types it)
-  enter             cd there, or ssh there
-  ^a claude    ^e edit    ^u git pull    ^p git push    ^o toggle preview
+  enter             open the actions for it: go there, claude, edit, pull,
+                    push. The first is the default, so enter twice goes there
+  ^o                show or hide the preview
 
 Bookmarks: $env:APPDATA\hop\bookmarks (yours) merged over
 $env:ProgramData\hop\bookmarks (system wide), plus bookmarks.d\*.conf beside each.
@@ -335,6 +336,63 @@ if "%~1"=="ssh" (
   dir /b "%~2" 2>nul
 )
 '@
+
+# --- actions ----------------------------------------------------------------
+# enter opens a small menu of what to do with the entry, in the middle of the
+# screen, rather than a chord per action that nobody remembers. The first row
+# is the default, so enter twice takes you there and enter, down, enter
+# starts claude. `actions` and `ssh_actions` in the settings order the rows,
+# and drop any you never use. pull and push only appear for a git repo. The
+# menu runs after the picker has exited, in this process, so unlike tab it
+# needs no batch file.
+function Test-HopRepo([string]$dir) {
+  if (-not (Get-Command git -ErrorAction SilentlyContinue)) { return $false }
+  git -C $dir rev-parse --git-dir 2>$null | Out-Null
+  return $LASTEXITCODE -eq 0
+}
+
+function Get-HopActionRows([string]$kind, [string]$dir) {
+  $e = [char]27
+  $ed = if ($env:EDITOR) { $env:EDITOR } else { 'notepad' }
+  $ed = [IO.Path]::GetFileNameWithoutExtension(($ed -split ' ')[0])
+  $list = if ($kind -eq 'ssh') { Get-HopSetting ssh_actions 'ssh claude edit' }
+          else                 { Get-HopSetting actions 'cd claude edit pull push' }
+  $row = { param($name, $color, $desc) "$e[$($color)m{0,-7}$e[0m $e[2m{1}$e[0m`t{0}" -f $name, $desc }
+  foreach ($a in (($list -replace ',', ' ') -split '\s+')) {
+    switch ("$kind/$a") {
+      'dir/cd'     { & $row cd     32 'go there' }
+      'dir/claude' { & $row claude 35 'start claude there' }
+      'dir/edit'   { & $row edit   34 "open in $ed" }
+      'dir/pull'   { if (Test-HopRepo $dir) { & $row pull 33 'git pull' } }
+      'dir/push'   { if (Test-HopRepo $dir) { & $row push 33 'git push' } }
+      'ssh/ssh'    { & $row ssh    32 'connect' }
+      'ssh/claude' { & $row claude 35 'connect, then claude' }
+      'ssh/edit'   { & $row edit   34 'open the ssh config' }
+    }
+  }
+}
+
+# A boxed list centred on the screen, sized to its rows: fzf's margins do the
+# centring, and its full-screen mode gives the terminal back untouched when
+# the box closes. Returns the chosen action, or nothing for escape.
+function Invoke-HopMenu([string]$kind, [string]$name, [string]$dir) {
+  $rows = @(Get-HopActionRows $kind $dir)
+  if (-not $rows.Count) { return }
+  $lines = 24; $cols = 80
+  try { $lines = $Host.UI.RawUI.WindowSize.Height; $cols = $Host.UI.RawUI.WindowSize.Width } catch {}
+  # Rows, the prompt line, and the two border lines. hidden info still draws
+  # its separator rule, which would eat the last row, hence no-separator.
+  $w = [Math]::Min(40, $cols); $h = $rows.Count + 3
+  $l = [Math]::Max(0, [Math]::Floor(($cols - $w) / 2))
+  $t = [Math]::Max(0, [Math]::Floor(($lines - $h) / 2))
+  $b = [Math]::Max(0, $lines - $h - $t)
+  $out = @($rows | fzf --ansi --layout=reverse --info=hidden --no-separator '--prompt=> ' `
+    '--delimiter=\t' --with-nth=1 --nth=1 `
+    --border=rounded "--border-label= $name " --border-label-pos=2 `
+    "--margin=$t,$l,$b,$l" `
+    '--color=border:cyan,label:cyan:bold,pointer:cyan,prompt:cyan')
+  if ($out.Count -and $out[0]) { ($out[0] -split "`t")[1] }
+}
 
 function hop {
   $piped = if ($MyInvocation.ExpectingInput) { @($input) } else { $null }
@@ -446,12 +504,26 @@ function hop {
   $rows = @(& $rowsFor '')
   if (-not $rows.Count) { Write-Host 'hop: no bookmark path exists on this machine (try: hop --all)'; return }
 
+  # The tab strip: the sections as tabs with the active one lit, or the
+  # categories when tab walks those. It is the first line of every row list,
+  # shown with --header-lines, so it follows every tab press with nothing
+  # behind the key.
+  $stripFor = {
+    param([string]$only)
+    $tab = { param($f, $label) if ($f -eq $only) { "$e[1;7;36m $label $e[0m" } else { "$e[2m $label $e[0m" } }
+    $s = & $tab '' 'all'
+    if ($hasSsh -and $hasDir) { $s += (& $tab '@bookmarks' 'bookmarks') + (& $tab '@ssh' 'ssh') }
+    else { $i = 0; foreach ($c in $cycle) { $i++; $s += & $tab $c "${i}:$c" } }
+    $s
+  }
+  $rows = @(& $stripFor '') + $rows
+
   # Everything tab can show is rendered up front, so the key costs a `type`.
   $work = Join-Path ([IO.Path]::GetTempPath()) "hop-$PID"
   New-Item -ItemType Directory -Force $work | Out-Null
   [IO.File]::WriteAllLines((Join-Path $work 'rows0.txt'), [string[]]$rows, $script:Utf8)
   for ($i = 0; $i -lt $cycle.Count; $i++) {
-    [IO.File]::WriteAllLines((Join-Path $work "rows$($i + 1).txt"), [string[]]@(& $rowsFor $cycle[$i]), $script:Utf8)
+    [IO.File]::WriteAllLines((Join-Path $work "rows$($i + 1).txt"), [string[]](@(& $stripFor $cycle[$i]) + @(& $rowsFor $cycle[$i])), $script:Utf8)
   }
   [IO.File]::WriteAllText((Join-Path $work 'state'), "0`n", $script:Utf8)
   $cycleCmd = Join-Path $work 'cycle.cmd'
@@ -463,9 +535,7 @@ function hop {
   # The separator is spelled as a code point: a literal would turn into two
   # characters wherever the file is read as ANSI instead of UTF-8.
   $dot = [string][char]0xB7
-  $hdr = if ($hasSsh -and $hasDir) { "tab bookmarks/ssh $dot " } else { "tab category $dot " }
-  $hdr += if ($cols -ge 76) { "enter cd/ssh $dot ^e edit $dot ^a claude $dot ^u pull $dot ^p push $dot ^o preview" }
-          else               { "enter cd/ssh $dot ^e edit $dot ^a claude" }
+  $hdr = "enter $dot ^o preview"
   if ($st.missing -gt 0) { $hdr += "`n$($st.missing) not here (--all)" }
 
   # `minimal = on` is shorthand for `header = off`; the explicit key still wins.
@@ -475,12 +545,11 @@ function hop {
 
   $fzfArgs = @(
     '--ansi', '--layout=reverse', '--border', '--height=80%', "--info=$info",
-    '--delimiter=\t', '--with-nth=1', '--nth=1',
-    '--prompt=hop > ', "--query=$query",
+    '--delimiter=\t', '--with-nth=1', '--nth=1', '--header-lines=1',
+    '--prompt=hop > ', '--print-query',
     '--bind=ctrl-o:toggle-preview',
     "--bind=tab:reload(""$cycleCmd"" ""$work"" 1 $n)",
     "--bind=btab:reload(""$cycleCmd"" ""$work"" -1 $n)",
-    '--expect=ctrl-a,ctrl-e,ctrl-u,ctrl-p',
     "--preview=""$previewCmd"" {6} {3} {5}", "--preview-window=$pvw"
   ) + $hdrArgs
 
@@ -488,44 +557,51 @@ function hop {
   # The console default is the OEM code page, which mangles anything non-ASCII.
   $oldOut = [Console]::OutputEncoding; $oldPipe = $OutputEncoding
   $oldCfg = $env:HOP_SSHCFG
+  $act = $null
   try {
     [Console]::OutputEncoding = $script:Utf8
     $OutputEncoding = $script:Utf8
     $env:HOP_SSHCFG = Get-HopSshConfigPath
-    $out = @($rows | fzf @fzfArgs)
+    # enter opens the action menu for the row. Escape there comes back to the
+    # picker with the query and the section intact, so a wrong row costs one
+    # keypress.
+    while ($true) {
+      $out = @($rows | fzf @fzfArgs "--query=$query")
+      if ($out.Count -lt 2 -or -not $out[1]) { return }
+      $query = $out[0]
+      $f = $out[1] -split "`t"
+      $target = $f[1]; $dir = $f[2]; $name = $f[4]; $kind = $f[5]
+      $act = Invoke-HopMenu $kind $name $dir
+      if ($act) { break }
+      $i = [int](Get-Content -LiteralPath (Join-Path $work 'state') -TotalCount 1)
+      $rows = @(Get-Content -LiteralPath (Join-Path $work "rows$i.txt") -Encoding utf8)
+    }
   } finally {
     [Console]::OutputEncoding = $oldOut; $OutputEncoding = $oldPipe
     $env:HOP_SSHCFG = $oldCfg
     Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
   }
-  if ($out.Count -lt 2) { return }
-  $key = $out[0]; $sel = $out[1]
-  if (-not $sel) { return }
-
-  $f = $sel -split "`t"
-  $target = $f[1]; $dir = $f[2]; $name = $f[4]
 
   # An ssh host: connect, and stay where you were. The alias is the name; the
-  # config supplies everything else. ^e opens the config, where the entry lives.
-  if ($target.StartsWith('ssh://')) {
-    switch ($key) {
-      'ctrl-e' { Invoke-HopEditor (Get-HopSshEditTarget (Get-HopSshConfigPath)) }
-      ''       { & ssh $name }
+  # config supplies everything else. `edit` opens the config, where the entry
+  # lives. claude runs through a login shell on the far side so it is found
+  # wherever the profile puts it.
+  if ($kind -eq 'ssh') {
+    switch ($act) {
+      'ssh'    { & ssh $name }
+      'claude' { & ssh -t $name '$SHELL -lic claude' }
+      'edit'   { Invoke-HopEditor (Get-HopSshEditTarget (Get-HopSshConfigPath)) }
     }
     return
   }
 
-  switch ($key) {
-    'ctrl-a' {
-      Enter-HopDir $dir
-      if (Get-Command claude -ErrorAction SilentlyContinue) { claude } else { Write-Host 'hop: claude is not on PATH' }
-      return
-    }
-    'ctrl-e' { Enter-HopDir $dir; Invoke-HopEditor $target; return }
-    'ctrl-u' { Enter-HopDir $dir; git pull; return }
-    'ctrl-p' { Enter-HopDir $dir; git push; return }
-  }
   Enter-HopDir $dir
+  switch ($act) {
+    'claude' { if (Get-Command claude -ErrorAction SilentlyContinue) { claude } else { Write-Host 'hop: claude is not on PATH' } }
+    'edit'   { Invoke-HopEditor $target }
+    'pull'   { git pull }
+    'push'   { git push }
+  }
 }
 
 Export-ModuleMember -Function hop
