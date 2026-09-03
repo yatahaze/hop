@@ -1,26 +1,26 @@
 # Roadmap
 
-## Windows
+## Windows: the rest of the picker
 
-Unsupported today. The script is bash, and the install targets it assumes
-(`/usr/local/bin`, `/etc/profile.d`) do not exist.
+`hop.psm1` covers picking, `cd`, virtualenvs, the preview and the `^a` `^e`
+`^u` `^p` actions, reading the same bookmarks files. Missing: the category
+column, `tab` cycling, `alt-N` and `^t` pinning.
 
-Notes for whoever picks this up:
+All four work by fzf re-invoking the script as a subprocess on every
+keypress, and `pwsh` takes a few hundred milliseconds to start, which is too
+slow to sit under a key. Options, roughly in order of appeal:
 
-- **The cd problem is easier there, not harder.** A PowerShell function can
-  call `Set-Location` in the caller's session directly, so there is no
-  print-a-path-and-wrap dance. The wrapper *is* the whole program.
-- **fzf runs on Windows**, and `PSFzf` wraps it. Worth checking whether calling
-  `fzf.exe` directly keeps the code closer to the bash version than adopting
-  the module.
-- **The bookmarks format should not fork.** Same `[category]` / `name path`
-  file, same merge order, with `%ProgramData%\hop\bookmarks.d\` and
-  `%APPDATA%\hop\bookmarks.d\` standing in for `/etc` and `~/.config`. Path
-  separators are the only real difference; `~` expansion becomes `$HOME`.
-
-Open question worth settling first: whether this is a second implementation of
-the same spec, or whether the picker moves to something that already runs on
-both and the bash version retires.
+- **Precompute.** The per-category row lists are known before fzf starts.
+  Write each to a temp file and bind `tab` to `reload(type <file>)` through
+  `cmd.exe`, with the index carried in a file the same way the bash version
+  does. No pwsh in the loop. The column pane could be pre-rendered per index
+  the same way. `^t` still needs a real process, but pinning is rare enough
+  that a slow `pwsh -File` there would be tolerable.
+- **fzf `transform` actions** (0.45+) can carry state without a subprocess
+  for the cycle itself, but rendering rows still needs one.
+- **Retire the bash version** for something that runs on both. Rejected for
+  now: the spec is a 30-line parser, and two small implementations are less
+  work than one portable one plus its runtime.
 
 ## Discovered bookmarks
 

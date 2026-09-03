@@ -53,6 +53,9 @@ Every file that exists is read, in this order:
 | `~/.config/hop/bookmarks` | you |
 | `~/.config/hop/bookmarks.d/*.conf` | you |
 
+On Windows the same four, with `%ProgramData%\hop\` in place of `/etc/hop/`
+and `%APPDATA%\hop\` in place of `~/.config/hop/`.
+
 `hop --edit` opens your own file, creating it if needed.
 `HOP_CONFIG=<file> hop` ignores all of them and reads just that file.
 
@@ -84,7 +87,8 @@ also has one beside it.
 ```
 
 Nothing to configure, and no venv means no activation. The preview pane names
-the venv that would activate.
+the venv that would activate. On Windows the same search looks for
+`Scripts\Activate.ps1` instead of `bin/activate`.
 
 ## Paths that do not exist
 
@@ -133,3 +137,7 @@ than a lock: set `column = on` alongside it and the column comes back.
 | `^p` | `git push` |
 
 `hop web` starts with `web` already typed.
+
+On Windows, `^o` toggles the preview instead of the column, and `tab`, `alt-1`
+and `^t` do nothing; the `column` setting is ignored. See
+[Install](install.md#windows) for why.

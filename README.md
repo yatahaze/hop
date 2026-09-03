@@ -10,7 +10,8 @@ there. Type to filter if you would rather.
 virtualenv if it finds one. Other keys act on it in place: open in `$EDITOR`,
 pull, push, start an agent.
 
-Bash and `fzf`. No runtime, no build. Works over SSH.
+Bash and `fzf`. No runtime, no build. Works over SSH. On Windows it is a
+PowerShell module and `fzf`, reading the same bookmarks file.
 
 ## Narrow terminals
 
@@ -40,13 +41,24 @@ Open a new shell, run `hop`.
 change its parent shell's directory, so `hop` on `PATH` alone would print a
 path and leave you where you were.
 
+On Windows, from PowerShell 7:
+
+```powershell
+git clone https://github.com/yatahaze/hop.git $HOME\hop; & $HOME\hop\install.ps1
+```
+
+That installs `fzf` with winget if you lack it and imports the module from
+your profile. Open a new PowerShell, run `hop`. The Windows port has no
+category column or `tab` cycling; typing the category still narrows. See
+[Install](docs/install.md#windows).
+
 ## Docs
 
 | | |
 |---|---|
-| [Install](docs/install.md) | manual install, why the shell function, uninstall |
+| [Install](docs/install.md) | manual install, why the shell function, Windows, uninstall |
 | [Bookmarks](docs/bookmarks.md) | format, where lists live, how they merge, settings |
-| [Roadmap](ROADMAP.md) | Windows, auto-discovery |
+| [Roadmap](ROADMAP.md) | auto-discovery, the rest of the Windows port |
 | [tools/screenshot](tools/screenshot) | regenerate the images above |
 
 MIT, see [LICENSE](LICENSE).

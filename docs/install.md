@@ -79,6 +79,40 @@ function hop
 end
 ```
 
+## Windows
+
+Needs PowerShell 7 and `fzf`. From PowerShell:
+
+```powershell
+git clone https://github.com/yatahaze/hop.git $HOME\hop; & $HOME\hop\install.ps1
+```
+
+`install.ps1`:
+
+- installs `fzf` with winget if it is not on `PATH`
+- seeds `%APPDATA%\hop\bookmarks` if you have none
+- adds an `Import-Module` line for `hop.psm1` to your `$PROFILE`, between
+  `# >>> hop >>>` markers so re-running replaces it
+
+Open a new PowerShell, run `hop`.
+
+There is no print-a-path dance on Windows. A PowerShell function runs in the
+caller's session and can call `Set-Location` and dot-source a virtualenv's
+`Scripts\Activate.ps1` directly, so `hop.psm1` is the whole program and
+nothing goes on `PATH`. The module is imported by absolute path, so it does
+not depend on `PSModulePath` either.
+
+Same bookmarks format, same merge order, with `%ProgramData%\hop` standing in
+for `/etc/hop` and `%APPDATA%\hop` for `~/.config/hop`. Paths may use `/` or
+`\`. `~` and `$HOME` expand to your user directory.
+
+Not ported: the category column, `tab` cycling and `^t` pinning. All three
+work by fzf re-invoking the script on every keypress, and starting `pwsh`
+costs a few hundred milliseconds each time. The category is a filterable
+prefix instead, so `hop web` and typing `conf` still narrow. `*` in the file
+still pins. The preview pane is there (`^o`), driven by `git` through
+`cmd.exe` so it stays quick.
+
 ## Uninstall
 
 ```bash
@@ -88,3 +122,6 @@ rm -f ~/bin/hop                 # or: sudo rm -f /usr/local/bin/hop
 Remove the `hop()` block from `~/.bashrc` and delete
 `~/.config/fish/functions/hop.fish`. Bookmarks in `~/.config/hop/` are left
 alone; delete that directory too if you want them gone.
+
+On Windows, remove the `# >>> hop >>>` block from `$PROFILE` and delete the
+clone. Bookmarks in `%APPDATA%\hop` are left alone.
