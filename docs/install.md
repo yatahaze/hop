@@ -106,11 +106,12 @@ Same bookmarks format, same merge order, with `%ProgramData%\hop` standing in
 for `/etc/hop` and `%APPDATA%\hop` for `~/.config/hop`. Paths may use `/` or
 `\`. `~` and `$HOME` expand to your user directory.
 
-Not ported: the category column, `alt-N` and `^t` pinning. All three work
-by fzf re-invoking the script on every keypress, and starting `pwsh` costs a
-few hundred milliseconds each time. The category is a filterable prefix
-instead, so `hop web` and typing `conf` still narrow. `*` in the file still
-pins. `tab` does work: the lists it switches between are written to temp
+Not ported: the category column, `alt-N` and `^t`. All three work by fzf
+re-invoking the script on every keypress, and starting `pwsh` costs a few
+hundred milliseconds each time. The category is a filterable prefix instead,
+so `hop web` and typing `conf` still narrow. Pinning is `pin` in the `enter`
+menu, which runs after fzf has closed and so costs nothing; `*` in the file
+still pins too. `tab` does work: the lists it switches between are written to temp
 files before fzf starts and a batch file cycles them, so no `pwsh` sits under
 the key. The preview pane is there (`^o`), driven by `git` and `ssh -G`
 through `cmd.exe` so it stays quick.

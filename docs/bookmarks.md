@@ -22,10 +22,10 @@ Invent whatever ones you want.
 Hosts from your ssh config appear alongside, under `ssh/` categories, without
 being listed here. See [SSH hosts](ssh.md).
 
-Press `^t` in the picker to pin or unpin whatever is selected. It takes effect
-immediately and survives restarts, kept in `~/.config/hop/pins` as a
-category/name pair rather than a copy of the entry, so a pin never goes stale
-when you edit the path.
+`pin` in the `enter` menu pins whatever is selected; `unpin` takes it back
+off. So does `^t`. It takes effect immediately and survives restarts, kept in
+`~/.config/hop/pins` as a category/name pair rather than a copy of the entry,
+so a pin never goes stale when you edit the path.
 
 You can also pin in the file itself, by prefixing a name with `*`:
 
@@ -39,8 +39,8 @@ Pinned entries sort first and keep their category. Because a later source
 overrides an earlier one, a personal file can pin something a system file
 defined, by repeating it with a `*`.
 
-`^t` wins over both: it can unpin something a file pinned with `*`, including
-a file you have no write access to.
+A pin from the picker wins over both: it can unpin something a file pinned
+with `*`, including a file you have no write access to.
 
 A bookmark can point at a file. `go` takes you to its directory, `edit`
 opens the file.
@@ -119,8 +119,8 @@ Every key has a working default, so no file is fine. See
 | `minimal` | `on`, `off` | strip the chrome: no hints, no counter |
 | `column` | `off`, `auto`, `on` | the category column; off by default, `auto` fits it to the terminal |
 | `header` | `on`, `off` | the section strip and key hints |
-| `actions` | action names | the menu for a directory, in order; default `cd claude edit pull push` |
-| `ssh_actions` | action names | the menu for a host, in order; default `ssh claude edit` |
+| `actions` | action names | the menu for a directory, in order; default `cd claude edit pull push pin` |
+| `ssh_actions` | action names | the menu for a host, in order; default `ssh claude edit pin` |
 
 `minimal = on` is shorthand for `header = off`, so it is a default rather
 than a lock: set `header = on` alongside it and the hints come back.
@@ -139,7 +139,7 @@ assumes you know.
 | `^o` | show or hide the category column |
 | type | filter, category names match too |
 | `enter` | open the actions for the entry |
-| `^t` | pin or unpin the selected entry |
+| `^t` | pin or unpin the selected entry, same as `pin` in the menu |
 
 `hop web` starts with `web` already typed.
 
@@ -156,6 +156,7 @@ Typing filters it like any other fzf list.
 | `edit` | open in `$EDITOR`, then land there | open the ssh config |
 | `pull` | `git pull`, then land there | |
 | `push` | `git push`, then land there | |
+| `pin` / `unpin` | pin it to the top, or take it off, and back to the list | same |
 
 `pull` and `push` only appear for a git repository.
 
@@ -166,8 +167,8 @@ you reach for most can go first and the ones you never use can go:
 actions = claude cd edit
 ```
 
-puts `claude` on the first `enter` and drops `pull` and `push`.
+puts `claude` on the first `enter` and drops `pull`, `push` and `pin`.
 
-On Windows, `^o` toggles the preview instead of the column, and `alt-1` and
-`^t` do nothing; the `column` setting is ignored. See
+On Windows, `^o` toggles the preview instead of the column, `alt-1` and
+`^t` do nothing, and the `column` setting is ignored. Pin from the menu. See
 [Install](install.md#windows) for why.

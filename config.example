@@ -27,5 +27,5 @@
 # What enter offers, in order. The first is the default, so `enter enter`
 # runs it. Leave one out and it is gone from the menu. pull and push only
 # show for a git repository anyway.
-#   actions = cd claude edit pull push
-#   ssh_actions = ssh claude edit
+#   actions = cd claude edit pull push pin
+#   ssh_actions = ssh claude edit pin

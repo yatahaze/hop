@@ -6,7 +6,7 @@ Bookmarks. Directories and ssh servers. Pick one, choose an option, done.
 
 `enter` on a row:
 
-![the menu: cd, claude, edit, pull, push](docs/demo-menu.png)
+![the menu: cd, claude, edit, pull, push, unpin](docs/demo-menu.png)
 
 `enter` again and you are there.
 

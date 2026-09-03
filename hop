@@ -293,11 +293,11 @@ action_row() {   # action_row <name> <color> <description>
   printf '\033[%sm%-7s\033[0m \033[2m%s\033[0m\t%s\n' "$2" "$1" "$3" "$1"
 }
 
-action_rows() {  # action_rows <dir|ssh> <dir>
-  local kind="$1" dir="$2" a list ed
+action_rows() {  # action_rows <dir|ssh> <dir> <pinned>
+  local kind="$1" dir="$2" pinned="${3:-0}" a list ed
   ed="${EDITOR:-vi}"; ed="${ed%% *}"; ed="$(basename "$ed")"
-  if [ "$kind" = ssh ]; then list="$(setting ssh_actions "ssh claude edit")"
-  else list="$(setting actions "cd claude edit pull push")"; fi
+  if [ "$kind" = ssh ]; then list="$(setting ssh_actions "ssh claude edit pin")"
+  else list="$(setting actions "cd claude edit pull push pin")"; fi
   for a in ${list//,/ }; do
     case "$kind/$a" in
       dir/cd)     action_row cd     32 "go there" ;;
@@ -308,6 +308,9 @@ action_rows() {  # action_rows <dir|ssh> <dir>
       ssh/ssh)    action_row ssh    32 "connect" ;;
       ssh/claude) action_row claude 35 "connect, then claude" ;;
       ssh/edit)   action_row edit   34 "open the ssh config" ;;
+      dir/pin|ssh/pin)
+        if [ "$pinned" = 1 ]; then action_row unpin 36 "off the top"
+        else action_row pin 36 "keep at the top"; fi ;;
     esac
   done
   return 0
@@ -316,9 +319,9 @@ action_rows() {  # action_rows <dir|ssh> <dir>
 # A boxed list centred on the screen, sized to its rows: fzf's margins do the
 # centring, and its full-screen mode gives the terminal back untouched when
 # the box closes. Prints the chosen action, or nothing for escape.
-menu() {         # menu <dir|ssh> <name> <dir>
+menu() {         # menu <dir|ssh> <name> <dir> <pinned>
   local rows n lines cols w h t l b
-  rows="$(action_rows "$1" "$3")"
+  rows="$(action_rows "$1" "$3" "${4:-0}")"
   [ -n "$rows" ] || return 0
   n="$(printf '%s\n' "$rows" | grep -c .)"
   read -r lines cols < <(stty size </dev/tty 2>/dev/null) || true
@@ -440,7 +443,7 @@ if [ "${1:-}" = "--cycle" ]; then
   exit 0
 fi
 
-# --- pin toggle (invoked by fzf as a subprocess) ----------------------------
+# --- pin toggle (invoked by fzf on ^t, and by the menu's pin row) -----------
 if [ "${1:-}" = "--pin" ]; then
   pcat="${2:-}"; pname="${3:-}"
   [ -n "$pcat" ] && [ -n "$pname" ] || exit 0
@@ -558,7 +561,7 @@ In the picker:
   alt-1..9          jump straight to a category
   type              filter, category names match too
   enter             open the actions for it: go there, claude, edit, pull,
-                    push. The first is the default, so enter twice goes there
+                    push, pin. The first is the default, so enter twice goes there
   ^t                pin or unpin the selected entry (kept in ~/.config/hop/pins)
   ^o                show or hide the category column
 
@@ -667,14 +670,19 @@ while :; do
   [ -n "$sel" ] || exit 0
 
   # Field 2 is the path; the row also carries category and name after it.
+  # The pin mark is the first character of the row.
   target="$(printf '%s' "$sel" | cut -f2)"
+  bcat="$(printf '%s' "$sel" | cut -f3)"
   name="$(printf '%s' "$sel" | cut -f4)"
+  case $sel in \**) pinned=1 ;; *) pinned=0 ;; esac
   case $target in
     ssh://*) kind=ssh; dir="" ;;
     *)       kind=dir; dir="$(destdir "$target")" ;;
   esac
 
-  act="$(menu "$kind" "$name" "$dir")"
+  act="$(menu "$kind" "$name" "$dir" "$pinned")"
+  # pin and unpin toggle and come straight back to the list, reordered.
+  case $act in pin|unpin) "$SELF" --pin "$bcat" "$name"; act="" ;; esac
   [ -n "$act" ] && break
   rows="$(rows_for "$(cat "$state")")"
 done

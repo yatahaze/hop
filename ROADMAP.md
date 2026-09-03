@@ -5,14 +5,15 @@
 `hop.psm1` does most of it: picking, `cd`, virtualenvs, the preview, ssh
 hosts, `tab`, the menu. Same files.
 
-Missing: the category column, `alt-N`, `^t` pinning.
+Missing: the category column, `alt-N`.
 
 Why: those work by fzf re-running the script on every keypress. Starting
 `pwsh` takes a few hundred milliseconds. Too slow under a key.
 
 `tab` got around it. Every list it can show is written to a file up front.
 A batch file swaps them. No `pwsh` in the loop. The same trick would do
-`alt-N`. Pinning is rare enough that a slow `^t` would be fine.
+`alt-N`. Pinning got around it too: it is a row in the menu, which runs
+after fzf has closed.
 
 One codebase for both was considered. Rejected. Two small scripts are less
 work than one portable one plus its runtime.

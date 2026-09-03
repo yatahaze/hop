@@ -222,8 +222,29 @@ function Get-HopBookmarks {
     foreach ($b in Read-HopFile $f) { $merged["$($b.Cat)`t$($b.Name)"] = $b }
   }
   foreach ($b in Get-HopSshHosts) { $merged["$($b.Cat)`t$($b.Name)"] = $b }
+  # Pins toggled from the menu: +category<TAB>name or -category<TAB>name, one
+  # per line, last one wins. Keyed rather than copied, so a pin never carries
+  # a stale path, and so it can override a * from a file you cannot write to.
+  $pf = Join-Path $script:UserDir 'pins'
+  if (Test-Path -LiteralPath $pf -PathType Leaf) {
+    foreach ($l in [IO.File]::ReadLines($pf)) {
+      if ($l -match '^([+-])(.+)$' -and $merged.Contains($Matches[2])) { $merged[$Matches[2]].Pin = ($Matches[1] -eq '+') }
+    }
+  }
   $all = @($merged.Values)
   @($all | Where-Object Pin) + @($all | Where-Object { -not $_.Pin })
+}
+
+# Same file the bash version keeps in ~/.config/hop/pins.
+function Set-HopPin([string]$cat, [string]$name, [bool]$on) {
+  $pf = Join-Path $script:UserDir 'pins'
+  New-Item -ItemType Directory -Force $script:UserDir | Out-Null
+  $keep = @()
+  if (Test-Path -LiteralPath $pf -PathType Leaf) {
+    $keep = @([IO.File]::ReadAllLines($pf) | Where-Object { $_ -ne "+$cat`t$name" -and $_ -ne "-$cat`t$name" })
+  }
+  $sign = if ($on) { '+' } else { '-' }
+  [IO.File]::WriteAllLines($pf, [string[]]($keep + @("$sign$cat`t$name")), $script:Utf8)
 }
 
 # A bookmark may point at a file; you hop to its directory.
@@ -281,7 +302,7 @@ In the picker:
   tab / shift-tab   all, bookmarks, ssh hosts (or the categories, with one kind)
   type              filter, category names match too (`hop web` pre-types it)
   enter             open the actions for it: go there, claude, edit, pull,
-                    push. The first is the default, so enter twice goes there
+                    push, pin. The first is the default, so enter twice goes there
   ^o                show or hide the preview
 
 Bookmarks: $env:APPDATA\hop\bookmarks (yours) merged over
@@ -351,12 +372,12 @@ function Test-HopRepo([string]$dir) {
   return $LASTEXITCODE -eq 0
 }
 
-function Get-HopActionRows([string]$kind, [string]$dir) {
+function Get-HopActionRows([string]$kind, [string]$dir, [bool]$pinned) {
   $e = [char]27
   $ed = if ($env:EDITOR) { $env:EDITOR } else { 'notepad' }
   $ed = [IO.Path]::GetFileNameWithoutExtension(($ed -split ' ')[0])
-  $list = if ($kind -eq 'ssh') { Get-HopSetting ssh_actions 'ssh claude edit' }
-          else                 { Get-HopSetting actions 'cd claude edit pull push' }
+  $list = if ($kind -eq 'ssh') { Get-HopSetting ssh_actions 'ssh claude edit pin' }
+          else                 { Get-HopSetting actions 'cd claude edit pull push pin' }
   $row = { param($name, $color, $desc) "$e[$($color)m{0,-7}$e[0m $e[2m{1}$e[0m`t{0}" -f $name, $desc }
   foreach ($a in (($list -replace ',', ' ') -split '\s+')) {
     switch ("$kind/$a") {
@@ -368,6 +389,8 @@ function Get-HopActionRows([string]$kind, [string]$dir) {
       'ssh/ssh'    { & $row ssh    32 'connect' }
       'ssh/claude' { & $row claude 35 'connect, then claude' }
       'ssh/edit'   { & $row edit   34 'open the ssh config' }
+      'dir/pin'    { if ($pinned) { & $row unpin 36 'off the top' } else { & $row pin 36 'keep at the top' } }
+      'ssh/pin'    { if ($pinned) { & $row unpin 36 'off the top' } else { & $row pin 36 'keep at the top' } }
     }
   }
 }
@@ -375,8 +398,8 @@ function Get-HopActionRows([string]$kind, [string]$dir) {
 # A boxed list centred on the screen, sized to its rows: fzf's margins do the
 # centring, and its full-screen mode gives the terminal back untouched when
 # the box closes. Returns the chosen action, or nothing for escape.
-function Invoke-HopMenu([string]$kind, [string]$name, [string]$dir) {
-  $rows = @(Get-HopActionRows $kind $dir)
+function Invoke-HopMenu([string]$kind, [string]$name, [string]$dir, [bool]$pinned) {
+  $rows = @(Get-HopActionRows $kind $dir $pinned)
   if (-not $rows.Count) { return }
   $lines = 24; $cols = 80
   try { $lines = $Host.UI.RawUI.WindowSize.Height; $cols = $Host.UI.RawUI.WindowSize.Width } catch {}
@@ -516,15 +539,19 @@ function hop {
     else { $i = 0; foreach ($c in $cycle) { $i++; $s += & $tab $c "${i}:$c" } }
     $s
   }
-  $rows = @(& $stripFor '') + $rows
-
   # Everything tab can show is rendered up front, so the key costs a `type`.
+  # Rendered again after a pin, which reorders every list.
   $work = Join-Path ([IO.Path]::GetTempPath()) "hop-$PID"
   New-Item -ItemType Directory -Force $work | Out-Null
-  [IO.File]::WriteAllLines((Join-Path $work 'rows0.txt'), [string[]]$rows, $script:Utf8)
-  for ($i = 0; $i -lt $cycle.Count; $i++) {
-    [IO.File]::WriteAllLines((Join-Path $work "rows$($i + 1).txt"), [string[]](@(& $stripFor $cycle[$i]) + @(& $rowsFor $cycle[$i])), $script:Utf8)
+  $writeLists = {
+    $st.missing = 0
+    [IO.File]::WriteAllLines((Join-Path $work 'rows0.txt'), [string[]](@(& $stripFor '') + @(& $rowsFor '')), $script:Utf8)
+    for ($i = 0; $i -lt $cycle.Count; $i++) {
+      [IO.File]::WriteAllLines((Join-Path $work "rows$($i + 1).txt"), [string[]](@(& $stripFor $cycle[$i]) + @(& $rowsFor $cycle[$i])), $script:Utf8)
+    }
   }
+  & $writeLists
+  $rows = @(Get-Content -LiteralPath (Join-Path $work 'rows0.txt') -Encoding utf8)
   [IO.File]::WriteAllText((Join-Path $work 'state'), "0`n", $script:Utf8)
   $cycleCmd = Join-Path $work 'cycle.cmd'
   $previewCmd = Join-Path $work 'preview.cmd'
@@ -570,8 +597,16 @@ function hop {
       if ($out.Count -lt 2 -or -not $out[1]) { return }
       $query = $out[0]
       $f = $out[1] -split "`t"
-      $target = $f[1]; $dir = $f[2]; $name = $f[4]; $kind = $f[5]
-      $act = Invoke-HopMenu $kind $name $dir
+      $target = $f[1]; $dir = $f[2]; $cat = $f[3]; $name = $f[4]; $kind = $f[5]
+      # The pin mark is the first character of the row.
+      $act = Invoke-HopMenu $kind $name $dir ($f[0].StartsWith('*'))
+      # pin and unpin toggle and come straight back to the list, reordered.
+      if ($act -eq 'pin' -or $act -eq 'unpin') {
+        Set-HopPin $cat $name ($act -eq 'pin')
+        $all = @(Get-HopBookmarks)
+        & $writeLists
+        $act = $null
+      }
       if ($act) { break }
       $i = [int](Get-Content -LiteralPath (Join-Path $work 'state') -TotalCount 1)
       $rows = @(Get-Content -LiteralPath (Join-Path $work "rows$i.txt") -Encoding utf8)

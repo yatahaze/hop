@@ -135,7 +135,7 @@ one:
 *djangor    ssh://ryan@203.0.113.7
 ```
 
-`^t` in the picker does the same without editing anything.
+`pin` in the picker's menu does the same without editing anything.
 
 ## Windows
 
