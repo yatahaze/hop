@@ -40,8 +40,7 @@ repo() {  # repo <dir> <file> <commit subject>
 }
 mkdir -p "$HOME_DIR"/src/{webapp,api,cli,webapp-docs,api-docs} \
          "$HOME_DIR"/.config/{nvim,tmux} "$HOME_DIR"/notes/journal "$HOME_DIR"/dotfiles
-# The images show the column, which is off by default; the fixture asks for it.
-mkdir -p "$HOME_DIR/.config/hop"; echo "column = auto" > "$HOME_DIR/.config/hop/config"
+mkdir -p "$HOME_DIR/.config/hop"
 repo src/webapp src/settings.py "fix pagination on the results page"
 repo src/api    main.go         "add rate limiting"
 repo dotfiles   bashrc          "tidy prompt"
@@ -89,9 +88,12 @@ shoot() {  # shoot <cols> <rows> <out.png> [keys...]
   tmux kill-session -t hop-shot 2>/dev/null || true
 }
 
-# Tab selects the first category: the point of the list images is the column
-# filtering, not the unfiltered list. Enter on the first row opens the action
-# menu; it takes over the screen, so that one is shot in a smaller terminal.
+# The README images are the defaults: no column, tab lighting the first
+# category in the strip. Enter on the first row opens the action menu; it
+# takes over the screen, so that one is shot in a smaller terminal.
 shoot 92 14 "$ROOT/docs/demo.png"        Tab
 shoot 60 10 "$ROOT/docs/demo-menu.png"   Tab Enter
+
+# The layout doc is about the column, which is off by default; ask for it.
+echo "column = auto" > "$HOME_DIR/.config/hop/config"
 shoot 44 12 "$ROOT/docs/demo-narrow.png" Tab
