@@ -35,6 +35,8 @@ repo() {  # repo <dir> <file> <commit subject>
 }
 mkdir -p "$HOME_DIR"/src/{webapp,api,cli,webapp-docs,api-docs} \
          "$HOME_DIR"/.config/{nvim,tmux} "$HOME_DIR"/notes/journal "$HOME_DIR"/dotfiles
+# The images show the column, which is off by default; the fixture asks for it.
+mkdir -p "$HOME_DIR/.config/hop"; echo "column = auto" > "$HOME_DIR/.config/hop/config"
 repo src/webapp src/settings.py "fix pagination on the results page"
 repo src/api    main.go         "add rate limiting"
 repo dotfiles   bashrc          "tidy prompt"

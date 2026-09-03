@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# hop: a bookmark picker for the directories you actually work in.
+# hop: a bookmark picker for the directories you actually work in, and the
+# hosts you ssh to.
 #
 # Prints the chosen directory on stdout and nothing else; the shell wrapper
 # installed by install.sh turns that into a `cd`. Everything the user sees
@@ -80,9 +81,166 @@ setting() {
 # later edit, and so it can override a * that came from a file you do not own.
 PINS="$USER_DIR/pins"
 
+# --- ssh hosts --------------------------------------------------------------
+# Hosts from your ssh config are a second source, emitted in the same
+# pin/category/name/path shape so they merge, pin and filter like bookmarks.
+# The path column carries ssh://user@host: what you see and filter on. The
+# name is the alias, and `enter` runs `ssh <alias>` so every option in the
+# config (key, port, jumps) applies exactly as it would from the shell.
+#
+# Setting `ssh_config` names the file; the default is where ssh itself looks.
+# `off` disables the source, for machines that are only ever the destination.
+# No `ssh` on PATH disables it too.
+ssh_config_path() {
+  local p; p="$(setting ssh_config "$HOME/.ssh/config")"
+  case $p in off|no|none|"") printf 'off'; return 0 ;; esac
+  ssh_path "$p"
+}
+
+ssh_source() {
+  local p; p="$(ssh_config_path)"
+  [ "$p" != off ] && [ -r "$p" ] && command -v ssh >/dev/null || return 0
+  parse_ssh "$p" ssh 0
+}
+
+# A path as ssh_config writes it, to one this shell can open: ~ and $HOME
+# expand, a relative path is under ~/.ssh as ssh resolves it, and a Windows
+# drive path (a synced config is shared with Windows machines) is mapped for
+# Git Bash, Cygwin or WSL.
+ssh_path() {
+  local p="$1" d
+  p="${p//\$HOME/$HOME}"
+  [ "${p:0:1}" = "~" ] && p="$HOME${p:1}"
+  case $p in
+    [A-Za-z]:[\\/]*)
+      p="${p//\\//}"
+      if command -v cygpath >/dev/null 2>&1; then p="$(cygpath -u "$p")"
+      else d="${p:0:1}"; p="/mnt/${d,,}${p:2}"; fi ;;
+    /*) ;;
+    *)  p="$HOME/.ssh/$p" ;;
+  esac
+  printf '%s' "$p"
+}
+
+# Emits the pending host block. Reads the caller's locals, which is why it is
+# a function and not a subshell.
+ssh_emit() {
+  [ -n "${alias:-}" ] || return 0
+  printf '%s\t%s\t%s\tssh://%s%s\n' 0 "$hcat" "$alias" "${user:+$user@}" "${host:-$alias}"
+}
+
+# Categories come from marker comments, `# [acme/web]`, which ssh ignores and
+# a generator can emit. Everything until the next marker belongs to it, under
+# an `ssh/` prefix so typing `ssh` narrows to hosts. `Include` is followed; an
+# included file with no markers is grouped by its file name, except one
+# called `config`, which is a pointer and inherits.
+#
+# Wildcard and negated Host patterns and Match blocks are skipped: they are
+# rules, not places you can go.
+parse_ssh() {   # parse_ssh <file> <category> <depth>
+  local f="$1" cat="$2" depth="$3" line key val tok inc g sub incs gs
+  local alias="" hcat="" host="" user=""
+  [ "$depth" -lt 8 ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    if [[ $line =~ ^[[:space:]]*#[[:space:]]*\[([^]]+)\][[:space:]]*$ ]]; then
+      cat="ssh/${BASH_REMATCH[1]}"; continue
+    fi
+    [[ $line =~ ^[[:space:]]*(#|$) ]] && continue
+    [[ $line =~ ^[[:space:]]*([A-Za-z]+)[[:space:]]*=?[[:space:]]*(.*)$ ]] || continue
+    key="${BASH_REMATCH[1],,}"; val="${BASH_REMATCH[2]}"
+    val="${val%"${val##*[![:space:]]}"}"
+    val="${val#\"}"; val="${val%\"}"
+    case $key in
+      host)
+        ssh_emit; alias=""
+        tok="${val%%[[:space:]]*}"
+        case $tok in ""|*[\*\?]*|\!*) ;; *) alias="$tok"; hcat="$cat"; host=""; user="" ;; esac ;;
+      match)    ssh_emit; alias="" ;;
+      hostname) host="$val" ;;
+      user)     user="$val" ;;
+      include)
+        set -f; read -ra incs <<< "$val"; set +f
+        for inc in "${incs[@]}"; do
+          mapfile -t gs < <(compgen -G "$(ssh_path "$inc")")
+          for g in "${gs[@]}"; do
+            [ -f "$g" ] || continue
+            sub="$(basename "$g")"; sub="ssh/${sub%.*}"
+            [ "$sub" = ssh/config ] && sub="$cat"
+            parse_ssh "$g" "$sub" $(( depth + 1 ))
+          done
+        done ;;
+    esac
+  done < "$f"
+  ssh_emit
+}
+
+# sed program that prints the first pattern of each Host line, skipping
+# wildcards, so it yields the aliases you could actually type.
+HOSTRE='s/^[[:space:]]*[Hh]ost[[:space:]=]+([^[:space:]*?!]+).*/\1/p'
+
+# The file to edit or replace. A config with no concrete hosts of its own and
+# a single Include is a pointer, common when the real file lives in a synced
+# folder, so follow it: editing the pointer is never what you meant.
+ssh_edit_target() {
+  local p="$1" hosts incs inc
+  hosts="$(sed -nE "$HOSTRE" "$p" 2>/dev/null | grep -c .)"
+  [ "${hosts:-0}" -eq 0 ] || { printf '%s' "$p"; return 0; }
+  mapfile -t incs < <(sed -nE 's/^[[:space:]]*[Ii]nclude[[:space:]=]+//p' "$p" | tr -d '"\r')
+  [ "${#incs[@]}" -eq 1 ] || { printf '%s' "$p"; return 0; }
+  inc="$(ssh_path "${incs[0]}")"
+  [ -f "$inc" ] && printf '%s' "$inc" || printf '%s' "$p"
+}
+
+# Whatever holds the clipboard here: a Mac, Wayland, X, WSL or Git Bash, a
+# phone in Termux. Fails if none does, and the caller says to pipe instead.
+clipboard() {
+  if command -v pbpaste >/dev/null; then pbpaste
+  elif [ -n "${WAYLAND_DISPLAY:-}" ] && command -v wl-paste >/dev/null; then wl-paste --no-newline
+  elif [ -n "${DISPLAY:-}" ] && command -v xclip >/dev/null; then xclip -selection clipboard -o
+  elif [ -n "${DISPLAY:-}" ] && command -v xsel >/dev/null; then xsel -b -o
+  elif command -v termux-clipboard-get >/dev/null; then termux-clipboard-get
+  elif command -v powershell.exe >/dev/null; then powershell.exe -NoProfile -Command Get-Clipboard | tr -d '\r'
+  else return 1; fi
+}
+
+# Replace the ssh config with the clipboard, a file, or stdin. For when a
+# server inventory generates the whole file and you want it in place without
+# hunting for the path. Checked with `ssh -G` before anything is touched, and
+# the old file is kept beside it as .bak. Everything goes to stderr: stdout
+# is the wrapper's, and a message there would become a cd.
+ssh_import() {
+  local cfg="$1" src="${2:-}" new tmp first old_hosts new_hosts n hostre="$HOSTRE"
+  if [ -n "$src" ]; then new="$(cat "$src")" || die "cannot read $src"
+  elif [ ! -t 0 ]; then new="$(cat)"
+  else new="$(clipboard)" || die "no clipboard tool found. Pipe it instead: hop --ssh-import < file"
+  fi
+  new="$(printf '%s\n' "$new" | tr -d '\r')"
+  first="$(printf '%s\n' "$new" | sed -nE "$hostre" | head -1)"
+  [ -n "$first" ] || die "that does not look like an ssh config: no Host line"
+  tmp="$(mktemp)"; printf '%s\n' "$new" > "$tmp"
+  if ! ssh -G -F "$tmp" "$first" >/dev/null 2>"$tmp.err"; then
+    printf 'hop: ssh rejects it, nothing written:\n' >&2; sed 's/^/     /' "$tmp.err" >&2
+    rm -f "$tmp" "$tmp.err"; exit 1
+  fi
+  rm -f "$tmp.err"
+  old_hosts="$( [ -f "$cfg" ] && sed -nE "$hostre" "$cfg" | sort -u)"
+  new_hosts="$(printf '%s\n' "$new" | sed -nE "$hostre" | sort -u)"
+  mkdir -p "$(dirname "$cfg")"
+  [ -f "$cfg" ] && cp -p "$cfg" "$cfg.bak"
+  chmod 600 "$tmp" 2>/dev/null; mv "$tmp" "$cfg"
+  n="$(printf '%s\n' "$new_hosts" | grep -c .)"
+  printf 'hop: wrote %s hosts to %s' "$n" "$cfg" >&2
+  [ -f "$cfg.bak" ] && printf ' (old copy in %s)' "$(basename "$cfg.bak")" >&2
+  printf '\n' >&2
+  comm -13 <(printf '%s\n' "$old_hosts") <(printf '%s\n' "$new_hosts") | grep . | sed 's/^/     + /' >&2
+  comm -23 <(printf '%s\n' "$old_hosts") <(printf '%s\n' "$new_hosts") | grep . | sed 's/^/     - /' >&2
+  return 0
+}
+
 parse_merged() {
   local f
-  { while IFS= read -r f; do parse_one "$f"; done < <(sources); } |
+  { ssh_source; while IFS= read -r f; do parse_one "$f"; done < <(sources); } |
     awk -F'\t' '{ k=$2 FS $3
                   if (!(k in seen)) { seen[k]=1; order[++n]=k }
                   val[k]=$0 }
@@ -126,21 +284,30 @@ venv_for() {
 # Column widths come from the whole set, not the filtered subset, so cycling
 # between categories does not make the list jitter. HOP_ALL and HOP_SHOWPATH
 # are exported so the reload subprocess renders rows identically to the parent.
+#
+# The filter is "" for everything, @bookmarks or @ssh for a section, or a
+# category name. Within the ssh section the ssh/ prefix is dropped from the
+# category column, since every row would carry it.
 rows_for() {
   parse | awk -F'\t' -v all="${HOP_ALL:-0}" -v home="$HOME" \
                      -v only="${1:-}" -v showpath="${HOP_SHOWPATH:-1}" '
     { pn[NR]=$1; cat[NR]=$2; nm[NR]=$3; pa[NR]=$4
-      if (length($2)+1>cw) cw=length($2)+1
+      ssh[NR]=($4 ~ /^ssh:\/\//)
+      c=$2; if (only=="@ssh") sub(/^ssh\/?/, "", c)
+      if (length(c)+1>cw) cw=length(c)+1
       if (length($3)>nw) nw=length($3)
       n=NR }
     END {
       for (i=1;i<=n;i++) {
-        if (all=="0" && system("test -e \"" pa[i] "\"")!=0) continue
-        if (only != "" && cat[i] != only) continue
+        if (all=="0" && !ssh[i] && system("test -e \"" pa[i] "\"")!=0) continue
+        if (only=="@ssh" && !ssh[i]) continue
+        if (only=="@bookmarks" && ssh[i]) continue
+        if (only != "" && only !~ /^@/ && cat[i] != only) continue
         mark = (pn[i]=="1" ? "*" : " ")
-        pre  = (only=="" ? sprintf("\033[2m%-*s\033[0m ", cw, cat[i]"/") : "")
+        c=cat[i]; if (only=="@ssh") sub(/^ssh\/?/, "", c)
+        pre  = (only=="" || only ~ /^@/ ? sprintf("\033[2m%-*s\033[0m ", cw, (c=="" ? "" : c"/")) : "")
         if (showpath=="1") {
-          short=pa[i]; sub("^" home, "~", short)
+          short=pa[i]; sub("^" home, "~", short); sub(/^ssh:\/\//, "", short)
           printf "%s%s%-*s \033[2m%s\033[0m\t%s\t%s\t%s\n", mark, pre, nw, nm[i], short, pa[i], cat[i], nm[i]
         } else
           printf "%s%s%s\t%s\t%s\t%s\n", mark, pre, nm[i], pa[i], cat[i], nm[i]
@@ -150,19 +317,35 @@ rows_for() {
 
 categories() { parse_merged | cut -f2 | awk '!seen[$0]++'; }
 
-# --- category cycling (invoked by fzf as a subprocess) ----------------------
-# Typing is the expensive part on a phone, so tab walks the categories and
-# index 0 means "all". State lives in a file because fzf 0.37 has no
-# `transform` action to carry it.
+# What tab walks. Bookmarks and ssh hosts are different enough that you want
+# one or the other, so with both present tab goes all, bookmarks, ssh. With
+# only one kind there is nothing to switch between, and tab walks the
+# categories instead, as it always did. alt-N always jumps to a category.
+sections() {
+  local s; s="$(parse_merged | awk -F'\t' '{ if ($4 ~ /^ssh:\/\//) s=1; else b=1 }
+                                          END { print (b?1:0) (s?1:0) }')"
+  case $s in 11) printf '@bookmarks\n@ssh\n' ;; *) categories ;; esac
+}
+
+# --- section cycling (invoked by fzf as a subprocess) -----------------------
+# Typing is the expensive part on a phone, so tab walks the sections. State is
+# the current filter, kept in a file because fzf 0.37 has no `transform`
+# action to carry it. `+1`/`-1` step through the cycle from wherever the
+# filter is now; `=N` is alt-N, straight to the Nth category.
 if [ "${1:-}" = "--cycle" ]; then
   spec="${2:-+1}"; state="${3:-}"
-  mapfile -t cats < <(categories)
-  idx=0; [ -s "$state" ] && idx="$(cat "$state")"
-  case "$spec" in +*|-*) idx=$(( idx + (spec) )) ;; *) idx="$spec" ;; esac
-  n=${#cats[@]}
-  idx=$(( idx % (n + 1) )); [ "$idx" -lt 0 ] && idx=$(( idx + n + 1 ))
-  printf '%s' "$idx" > "$state"
-  if [ "$idx" -eq 0 ]; then rows_for ""; else rows_for "${cats[idx-1]}"; fi
+  cur=""; [ -s "$state" ] && cur="$(cat "$state")"
+  case "$spec" in
+    =*) mapfile -t cats < <(categories); i="${spec#=}"
+        [ "$i" -ge 1 ] && [ "$i" -le "${#cats[@]}" ] && cur="${cats[i-1]}" ;;
+    *)  mapfile -t cyc < <(sections)
+        idx=0; for i in "${!cyc[@]}"; do [ "${cyc[i]}" = "$cur" ] && idx=$(( i + 1 )); done
+        n=${#cyc[@]}
+        idx=$(( (idx + (spec)) % (n + 1) )); [ "$idx" -lt 0 ] && idx=$(( idx + n + 1 ))
+        cur=""; [ "$idx" -gt 0 ] && cur="${cyc[idx-1]}" ;;
+  esac
+  printf '%s' "$cur" > "$state"
+  rows_for "$cur"
   exit 0
 fi
 
@@ -186,9 +369,10 @@ fi
 # category column, with the active one marked, plus a compact status for the
 # selected row underneath.
 if [ "${1:-}" = "--pane" ]; then
-  sel="${2:-}"; state="${3:-}"; w="${HOP_PANEW:-20}"
+  sel="${2:-}"; state="${3:-}"; alias="${4:-}"; w="${HOP_PANEW:-20}"
   mapfile -t cats < <(categories)
-  idx=0; [ -s "$state" ] && idx="$(cat "$state")"
+  cur=""; [ -s "$state" ] && cur="$(cat "$state")"
+  idx=0; for i in "${!cats[@]}"; do [ "${cats[i]}" = "$cur" ] && idx=$(( i + 1 )); done
   # Counts and the status block are the first things to go when the column is
   # narrow; the category names are the reason the column exists.
   [ "$w" -ge 12 ] && counts=1 || counts=0
@@ -206,10 +390,30 @@ if [ "${1:-}" = "--pane" ]; then
       else                         printf '%d %-*s\n'                "$i" "$nw" "$c"; fi
     fi
   done
-  if [ "$idx" -eq 0 ]; then printf '\033[7m%-*s\033[0m\n' "$w" "  all"
-  else                      printf '\033[2m  all\033[0m\n'; fi
+  # The bottom line names the section: all, or the one tab landed on.
+  case $cur in
+    "") printf '\033[7m%-*s\033[0m\n' "$w" "  all" ;;
+    @*) printf '\033[7m%-*s\033[0m\n' "$w" "  ${cur#@}" ;;
+    *)  printf '\033[2m  all\033[0m\n' ;;
+  esac
   # Vertical space is scarce on a phone, so the status block is desktop-only.
   [ "${HOP_PANESTATUS:-1}" = 1 ] || exit 0
+  case $sel in
+    ssh://*)
+      # Who you would land as, where, and with which key, without connecting.
+      printf '\n\033[2m%*s\033[0m\n' "$w" "" | tr ' ' '-'
+      ssh -G -F "$(ssh_config_path)" "$alias" 2>/dev/null | awk -v w="$w" '
+        $1=="user" {u=$2} $1=="hostname" {h=$2} $1=="port" {p=$2}
+        $1=="identityfile" {kc++; if (kc==1) {k=$2; sub(".*/", "", k)}}
+        $1=="proxyjump" && $2!="none" {j=$2}
+        END { if (h=="") exit
+              printf "\033[33m%s\033[0m\n", substr(u "@" h, 1, w)
+              if (p!="" && p!="22") printf "port %s\n", p
+              # one identityfile means the config named it; several is the default list
+              if (kc==1) printf "\033[2m%s\033[0m\n", substr(k, 1, w)
+              if (j!="") printf "via %s\n", substr(j, 1, w-4) }'
+      exit 0 ;;
+  esac
   [ -n "$sel" ] && [ -e "$sel" ] || exit 0
   printf '\n\033[2m%*s\033[0m\n' "$w" "" | tr ' ' '-'
   d="$(destdir "$sel")"
@@ -250,20 +454,33 @@ case "${1:-}" in
   --all) show_all=1; shift ;;
   -h|--help)
     cat >&2 <<'USAGE'
-hop [--all] [query]     pick a bookmark; the shell wrapper cds you there
+hop [--all] [query]     pick a bookmark or an ssh host; the shell wrapper
+                        cds you there, or connects
 hop --edit              open your bookmarks file in $EDITOR
-hop --list              print bookmarks as category<TAB>name<TAB>path
+hop --list              print entries as category<TAB>name<TAB>path
+hop --ssh-edit          open your ssh config in $EDITOR
+hop --ssh-import [file] replace your ssh config from the clipboard, a file,
+                        or stdin; checked with `ssh -G` first, old copy in .bak
 
 In the picker:
-  tab / shift-tab   next / previous category; alt-1..9 jump straight to one
+  tab / shift-tab   all, bookmarks, ssh hosts (or the categories, with one kind)
+  alt-1..9          jump straight to a category
   type              filter, category names match too
-  enter             cd there
-  ^t                pin or unpin the selected bookmark (kept in ~/.config/hop/pins)\n  ^e edit    ^a claude    ^u git pull    ^p git push    ^o toggle column
+  enter             cd there, or ssh there
+  ^t                pin or unpin the selected entry (kept in ~/.config/hop/pins)
+  ^e edit    ^a claude    ^u git pull    ^p git push    ^o toggle column
 
-Layout adapts to width: the preview is hidden below 90 columns and the path
-column drops below 46, so it stays usable in a narrow split or on a phone.
+Hosts come from ~/.ssh/config, Include lines followed. `# [name]` comments
+group them. Set `ssh_config = <file>` or `ssh_config = off` in
+~/.config/hop/config.
 USAGE
     exit 0 ;;
+  --ssh-edit)
+    cfg="$(ssh_config_path)"; [ "$cfg" != off ] || die "ssh_config is off in your settings"
+    exec ${EDITOR:-vi} "$(ssh_edit_target "$cfg")" ;;
+  --ssh-import)
+    cfg="$(ssh_config_path)"; [ "$cfg" != off ] || die "ssh_config is off in your settings"
+    ssh_import "$(ssh_edit_target "$cfg")" "${2:-}"; exit 0 ;;
   --edit)
     mkdir -p "$USER_DIR"
     if [ ! -f "$USER_DIR/bookmarks" ]; then
@@ -279,7 +496,7 @@ SEED
   --list) parse | cut -f2-; exit 0 ;;
 esac
 
-[ -n "$(sources)" ] || die "no bookmarks in $SYS_DIR or $USER_DIR. Run: hop --edit"
+[ -n "$(sources)" ] || [ -n "$(ssh_source)" ] || die "no bookmarks in $SYS_DIR or $USER_DIR. Run: hop --edit"
 command -v fzf >/dev/null || die "fzf is not on PATH"
 # Without the shell function this prints a path and leaves you put, which reads
 # as "hop is broken" rather than "hop is not installed properly".
@@ -293,12 +510,12 @@ export HOP_PANEW=20 HOP_PANESTATUS=1
 # `minimal = on` is shorthand for turning the chrome off; the individual keys
 # still win where they are set, so it is a default rather than a mode lock.
 minimal="$(setting minimal off)"
-[ "$minimal" = on ] && cdef=off || cdef=auto
 [ "$minimal" = on ] && hdef=off || hdef=on
-# column = auto (fit it to the terminal) | on (always) | off (never).
-# ^o still toggles it within a session either way.
+# column = off (default: the header strip names the sections and categories
+# instead) | auto (fit it to the terminal) | on (always). ^o still toggles it
+# within a session either way.
 want_col=1
-case "$(setting column "$cdef")" in
+case "$(setting column off)" in
   off) want_col=0 ;;
   on)  [ "$cols" -lt 40 ] && cols=40 ;;
 esac
@@ -314,12 +531,12 @@ else                          pvw="hidden,left,13,border-right"; listw="$cols"; 
 if [ "$listw" -ge 56 ]; then export HOP_SHOWPATH=1; else export HOP_SHOWPATH=0; fi
 export HOP_ALL="$show_all"
 
-missing="$(parse | awk -F'\t' -v all="$show_all" '{ if (all=="0" && system("test -e \"" $4 "\"")!=0) m++ } END { print m+0 }')"
+missing="$(parse | awk -F'\t' -v all="$show_all" '{ if (all=="0" && $4 !~ /^ssh:\/\// && system("test -e \"" $4 "\"")!=0) m++ } END { print m+0 }')"
 rows="$(rows_for "")"
 [ -n "$rows" ] || die "no bookmark path exists on this machine (try: hop --all)"
 
 state="$(mktemp)"; trap 'rm -f "$state"' EXIT INT TERM HUP
-printf 0 > "$state"
+: > "$state"
 
 binds=( --bind "ctrl-o:toggle-preview"
         --bind "ctrl-t:execute-silent($SELF --pin {3} {4})+reload($SELF --cycle +0 $state)"
@@ -329,12 +546,15 @@ strip=""; i=0
 while IFS= read -r c; do
   [ -z "$c" ] && continue
   i=$(( i + 1 )); [ "$i" -gt 9 ] && break
-  binds+=( --bind "alt-$i:reload($SELF --cycle $i $state)" )
+  binds+=( --bind "alt-$i:reload($SELF --cycle =$i $state)" )
   strip="$strip${strip:+ · }$i:$c"
 done < <(categories)
+# With both kinds present tab switches between them, and the strip says so.
+if [ "$(sections | head -1)" = "@bookmarks" ]; then strip="tab bookmarks/ssh · alt $strip"
+else strip="tab · $strip"; fi
 
 case "$pvw" in
-  hidden*) hdr="tab · $strip"$'\n'"enter cd · ^t pin · ^e edit · ^a claude" ;;
+  hidden*) hdr="$strip"$'\n'"enter cd · ^t pin · ^e edit · ^a claude" ;;
   *)       hdr="enter cd · ^t pin · ^e edit · ^a claude · ^u pull · ^p push"
            [ "$listw" -ge 62 ] || hdr="enter cd · ^t pin · ^e edit · ^a claude"
            [ "$listw" -ge 36 ] || hdr="enter cd · ^t pin" ;;
@@ -351,7 +571,7 @@ out="$(printf '%s\n' "$rows" | fzf \
   --query="${1:-}" \
   "${binds[@]}" \
   --expect=ctrl-a,ctrl-e,ctrl-u,ctrl-p \
-  --preview="'$SELF' --pane {2} $state" --preview-window="$pvw")"
+  --preview="'$SELF' --pane {2} $state {4}" --preview-window="$pvw")"
 
 [ -n "$out" ] || exit 0
 key="$(printf '%s' "$out" | sed -n 1p)"
@@ -360,6 +580,20 @@ sel="$(printf '%s' "$out" | sed -n 2p)"
 
 # Field 2 specifically: the row also carries category and name after it, for ^t.
 target="$(printf '%s' "$sel" | cut -f2)"
+
+# An ssh host: connect on the tty and print nothing, so the wrapper stays put.
+# The alias is the name column; the config supplies everything else. ^e opens
+# the config, since that is where the entry lives.
+case $target in
+  ssh://*)
+    alias="$(printf '%s' "$sel" | cut -f4)"
+    case "$key" in
+      "")     ssh "$alias"                                            </dev/tty >/dev/tty 2>&1 ;;
+      ctrl-e) ${EDITOR:-vi} "$(ssh_edit_target "$(ssh_config_path)")" </dev/tty >/dev/tty 2>&1 ;;
+    esac
+    exit 0 ;;
+esac
+
 dir="$(destdir "$target")"
 
 # Actions take the tty; stdout stays clean so the wrapper can still cd.

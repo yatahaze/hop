@@ -19,6 +19,9 @@ parsed, never `eval`d.
 Categories are just a filter prefix. Typing `conf` narrows to `configs/`.
 Invent whatever ones you want.
 
+Hosts from your ssh config appear alongside, under `ssh/` categories, without
+being listed here. See [SSH hosts](ssh.md).
+
 Press `^t` in the picker to pin or unpin whatever is selected. It takes effect
 immediately and survives restarts, kept in `~/.config/hop/pins` as a
 category/name pair rather than a copy of the entry, so a pin never goes stale
@@ -111,33 +114,35 @@ Every key has a working default, so no file is fine. See
 
 | Key | Values | Does |
 |---|---|---|
-| `minimal` | `on`, `off` | strip the chrome: no column, no hints, no counter |
-| `column` | `auto`, `on`, `off` | the category column; `auto` fits it to the terminal |
-| `header` | `on`, `off` | the category strip and key hints |
+| `ssh_config` | a path, `off` | where hosts come from; default `~/.ssh/config` |
+| `minimal` | `on`, `off` | strip the chrome: no hints, no counter |
+| `column` | `off`, `auto`, `on` | the category column; off by default, `auto` fits it to the terminal |
+| `header` | `on`, `off` | the section strip and key hints |
 
-`minimal = on` is shorthand for the other two off, so it is a default rather
-than a lock: set `column = on` alongside it and the column comes back.
+`minimal = on` is shorthand for `header = off`, so it is a default rather
+than a lock: set `header = on` alongside it and the hints come back.
 
-`column = off` still shows the hotkey strip, so you can see what `tab` and
-`alt-1` will do. `minimal = on` does not — it assumes you know.
+With the column off the header strip still names the sections and
+categories, so you can see what `tab` and `alt-1` will do. `minimal = on`
+drops that too — it assumes you know.
 
 ## Keys
 
 | Key | Does |
 |---|---|
-| `tab` / `shift-tab` | next / previous category, then back to all |
-| `alt-1`..`alt-9` | jump straight to a category (numbers shown in the column) |
+| `tab` / `shift-tab` | all, bookmarks, ssh hosts; with only one kind, walks the categories instead |
+| `alt-1`..`alt-9` | jump straight to a category (numbers shown in the column and the strip) |
 | `^o` | show or hide the category column |
 | type | filter, category names match too |
-| `enter` | cd there |
-| `^t` | pin or unpin the selected bookmark |
-| `^e` | open in `$EDITOR` |
+| `enter` | cd there, or ssh there |
+| `^t` | pin or unpin the selected entry |
+| `^e` | open in `$EDITOR`; for a host, opens the ssh config |
 | `^a` | run `claude` there, then land there |
 | `^u` | `git pull` |
 | `^p` | `git push` |
 
 `hop web` starts with `web` already typed.
 
-On Windows, `^o` toggles the preview instead of the column, and `tab`, `alt-1`
-and `^t` do nothing; the `column` setting is ignored. See
+On Windows, `^o` toggles the preview instead of the column, and `alt-1` and
+`^t` do nothing; the `column` setting is ignored. See
 [Install](install.md#windows) for why.

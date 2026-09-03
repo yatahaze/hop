@@ -2,18 +2,24 @@
 # later file winning. `key = value`, # starts a comment. Every key has a
 # working default, so no file at all is fine.
 
-# Strip the chrome: no category column, no key hints, no match counter. Just
-# the prompt and the list. Shorthand for setting `column` and `header` off;
-# either of those still wins where you set it explicitly.
+# Where your ssh hosts come from. Default is the file ssh itself reads,
+# ~/.ssh/config, with Include lines followed. Point it elsewhere, or turn it
+# off on a machine that is only ever the destination and should not offer
+# places to ssh out to. This file is per machine, which is the point.
+#   ssh_config = ~/General/Settings/ssh/config
+#   ssh_config = off
+
+# Strip the chrome: no key hints, no match counter. Just the prompt and the
+# list. Shorthand for `header = off`; `header` still wins where you set it.
 #   minimal = on
 
 # Category column down the left.
-#   auto  fit it to the terminal, shedding detail as it narrows (default)
+#   off   never show it; the header strip names the categories (default)
+#   auto  fit it to the terminal, shedding detail as it narrows
 #   on    always show it
-#   off   never show it; categories fall back to a one-line strip of hotkeys
 #
 # ^o toggles the column within a session whatever this says.
-#   column = auto
+#   column = off
 
-# The two header lines: the category strip and the key hints.
+# The two header lines: the section and category strip, and the key hints.
 #   header = on
