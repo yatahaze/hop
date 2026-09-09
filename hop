@@ -204,6 +204,14 @@ clipboard() {
   else return 1; fi
 }
 
+# What to install when clipboard() found nothing, named for this desktop so
+# the message says what is missing rather than just that something is.
+clipboard_hint() {
+  if [ -n "${WAYLAND_DISPLAY:-}" ]; then printf 'on Wayland that is wl-paste (package wl-clipboard)'
+  elif [ -n "${DISPLAY:-}" ]; then printf 'on X that is xclip or xsel'
+  else printf 'no desktop session, so there is none to read'; fi
+}
+
 # Replace the ssh config with the clipboard, a file, or stdin. For when a
 # server inventory generates the whole file and you want it in place without
 # hunting for the path. Checked with `ssh -G` before anything is touched, and
@@ -213,7 +221,7 @@ ssh_import() {
   local cfg="$1" src="${2:-}" new tmp first old_hosts new_hosts n hostre="$HOSTRE"
   if [ -n "$src" ]; then new="$(cat "$src")" || die "cannot read $src"
   elif [ ! -t 0 ]; then new="$(cat)"
-  else new="$(clipboard)" || die "no clipboard tool found. Pipe it instead: hop --ssh-import < file"
+  else new="$(clipboard)" || die "no clipboard tool found; $(clipboard_hint). Pipe it instead: hop --ssh-import < file"
   fi
   new="$(printf '%s\n' "$new" | tr -d '\r')"
   first="$(printf '%s\n' "$new" | sed -nE "$hostre" | head -1)"

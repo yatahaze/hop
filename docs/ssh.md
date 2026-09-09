@@ -109,7 +109,8 @@ hop: wrote 19 hosts to ~/General/Settings/ssh/config (old copy in config.bak)
 The clipboard is read with whatever the machine has: `pbpaste`, `wl-paste`,
 `xclip`, `xsel`, Termux's `termux-clipboard-get`, or PowerShell's
 `Get-Clipboard` on Windows and under WSL. With none of those, pipe the file
-in.
+in, or install one: `wl-clipboard` on a Wayland desktop (Pop!_OS, recent
+GNOME and KDE), `xclip` or `xsel` on X.
 
 ## For whatever generates your config
 
