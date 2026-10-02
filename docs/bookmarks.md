@@ -119,8 +119,8 @@ Every key has a working default, so no file is fine. See
 | `minimal` | `on`, `off` | strip the chrome: no hints, no counter |
 | `column` | `off`, `auto`, `on` | the category column; off by default, `auto` fits it to the terminal |
 | `header` | `on`, `off` | the section strip and key hints |
-| `actions` | action names | the menu for a directory, in order; default `cd claude edit pull push pin` |
-| `ssh_actions` | action names | the menu for a host, in order; default `ssh claude edit pin` |
+| `actions` | action names | the menu for a directory, in order; default `cd code claude edit pull push pin` |
+| `ssh_actions` | action names | the menu for a host, in order; default `ssh herdr claude edit pin` |
 
 `minimal = on` is shorthand for `header = off`, so it is a default rather
 than a lock: set `header = on` alongside it and the hints come back.
@@ -152,22 +152,28 @@ Typing filters it like any other fzf list.
 | Action | Directory | Host |
 |---|---|---|
 | `cd` / `ssh` | cd there, activating a virtualenv if one is found | `ssh <alias>` |
+| `code` | open in vscode, then land there | |
+| `herdr` | | connect and run `herdr` on the far side |
 | `claude` | run `claude` there, then land there | connect and run `claude` on the far side |
 | `edit` | open in `$EDITOR`, then land there | open the ssh config |
 | `pull` | `git pull`, then land there | |
 | `push` | `git push`, then land there | |
 | `pin` / `unpin` | pin it to the top, or take it off, and back to the list | same |
 
-`pull` and `push` only appear for a git repository.
+`code`, `pull` and `push` only appear for a git repository, and `code` only
+with `code` on `PATH`. It opens the one `.code-workspace` file in the
+directory if there is exactly one, so the folders and settings it carries
+come along, and the directory itself otherwise.
 
 The `actions` and `ssh_actions` settings are the menus, in order, so the one
 you reach for most can go first and the ones you never use can go:
 
 ```
-actions = claude cd edit
+actions = code cd edit
 ```
 
-puts `claude` on the first `enter` and drops `pull`, `push` and `pin`.
+puts vscode on the first `enter` for a repository, `cd` for anything else,
+and drops `claude`, `pull`, `push` and `pin`.
 
 On Windows, `^o` toggles the preview instead of the column, `alt-1` and
 `^t` do nothing, and the `column` setting is ignored. Pin from the menu. See

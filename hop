@@ -4,7 +4,7 @@
 #
 # Prints the chosen directory on stdout and nothing else; the shell wrapper
 # installed by install.sh turns that into a `cd`. Everything the user sees
-# (fzf, editors, claude, git) is written straight to /dev/tty so it never
+# (fzf, editors, claude, herdr, git) is written straight to /dev/tty so it never
 # pollutes the captured stdout.
 
 set -uo pipefail
@@ -293,9 +293,21 @@ venv_for() {
 # enter opens a small menu of what to do with the entry, in the middle of the
 # screen, rather than a chord per action that nobody remembers. The first row
 # is the default, so `enter enter` takes you there and `enter down enter`
-# starts claude. `actions` and `ssh_actions` in the settings order the rows,
-# and drop any you never use. pull and push only appear for a git repo.
+# opens the repo in vscode. `actions` and `ssh_actions` in the settings order
+# the rows, and drop any you never use. code, pull and push only appear for a
+# git repo; code also needs `code` on PATH. For a host the second row runs
+# herdr on the far side; `claude` is still an action, list it to get it back.
 is_repo() { git -C "$1" rev-parse --git-dir >/dev/null 2>&1; }
+has_code() { command -v code >/dev/null 2>&1; }
+
+# What `code` opens: the one .code-workspace in the directory if there is
+# exactly one, so the folders and settings it carries come along, else the
+# directory itself. Two workspaces is a choice hop cannot make for you.
+code_target() {  # code_target <dir>
+  local ws=() f
+  for f in "$1"/*.code-workspace; do [ -e "$f" ] && ws+=("$f"); done
+  if [ "${#ws[@]}" -eq 1 ]; then printf '%s\n' "${ws[0]}"; else printf '%s\n' "$1"; fi
+}
 
 action_row() {   # action_row <name> <color> <description>
   printf '\033[%sm%-7s\033[0m \033[2m%s\033[0m\t%s\n' "$2" "$1" "$3" "$1"
@@ -304,16 +316,18 @@ action_row() {   # action_row <name> <color> <description>
 action_rows() {  # action_rows <dir|ssh> <dir> <pinned>
   local kind="$1" dir="$2" pinned="${3:-0}" a list ed
   ed="${EDITOR:-vi}"; ed="${ed%% *}"; ed="$(basename "$ed")"
-  if [ "$kind" = ssh ]; then list="$(setting ssh_actions "ssh claude edit pin")"
-  else list="$(setting actions "cd claude edit pull push pin")"; fi
+  if [ "$kind" = ssh ]; then list="$(setting ssh_actions "ssh herdr claude edit pin")"
+  else list="$(setting actions "cd code claude edit pull push pin")"; fi
   for a in ${list//,/ }; do
     case "$kind/$a" in
       dir/cd)     action_row cd     32 "go there" ;;
+      dir/code)   is_repo "$dir" && has_code && action_row code 35 "open in vscode" ;;
       dir/claude) action_row claude 35 "start claude there" ;;
       dir/edit)   action_row edit   34 "open in $ed" ;;
       dir/pull)   is_repo "$dir" && action_row pull 33 "git pull" ;;
       dir/push)   is_repo "$dir" && action_row push 33 "git push" ;;
       ssh/ssh)    action_row ssh    32 "connect" ;;
+      ssh/herdr)  action_row herdr  35 "connect, then herdr" ;;
       ssh/claude) action_row claude 35 "connect, then claude" ;;
       ssh/edit)   action_row edit   34 "open the ssh config" ;;
       dir/pin|ssh/pin)
@@ -568,8 +582,9 @@ In the picker:
   tab / shift-tab   all, bookmarks, ssh hosts (or the categories, with one kind)
   alt-1..9          jump straight to a category
   type              filter, category names match too
-  enter             open the actions for it: go there, claude, edit, pull,
-                    push, pin. The first is the default, so enter twice goes there
+  enter             open the actions for it: go there, vscode, claude, edit,
+                    pull, push, pin. The first is the default, so enter twice
+                    goes there; for a host: connect, herdr, claude, edit, pin
   ^t                pin or unpin the selected entry (kept in ~/.config/hop/pins)
   ^o                show or hide the category column
 
@@ -697,14 +712,19 @@ done
 
 # An ssh host: connect on the tty and print nothing, so the wrapper stays put.
 # The alias is the name column; the config supplies everything else. `edit`
-# opens the config, since that is where the entry lives. claude runs through
-# a login shell on the far side so it is found wherever the profile puts it.
+# opens the config, since that is where the entry lives. herdr and claude run
+# through a login shell on the far side so they are found wherever the
+# profile puts them.
 case "$kind/$act" in
   ssh/ssh)    ssh "$name"                                               </dev/tty >/dev/tty 2>&1; exit 0 ;;
+  ssh/herdr)  ssh -t "$name" '$SHELL -lic herdr'                        </dev/tty >/dev/tty 2>&1; exit 0 ;;
   ssh/claude) ssh -t "$name" '$SHELL -lic claude'                       </dev/tty >/dev/tty 2>&1; exit 0 ;;
   ssh/edit)   ${EDITOR:-vi} "$(ssh_edit_target "$(ssh_config_path)")"  </dev/tty >/dev/tty 2>&1; exit 0 ;;
   # Directory actions take the tty; stdout stays clean so the wrapper can
   # still cd once they return.
+  # code hands off to a running or new window and returns at once, so the
+  # shell lands in the directory while the editor comes up.
+  dir/code)   ( cd "$dir" && code "$(code_target "$dir")" ) </dev/tty >/dev/null 2>&1 ;;
   dir/claude) ( cd "$dir" && claude )                     </dev/tty >/dev/tty 2>&1 ;;
   dir/edit)   ( cd "$dir" && ${EDITOR:-vi} "$target" )    </dev/tty >/dev/tty 2>&1 ;;
   dir/pull)   ( cd "$dir" && git pull )                   </dev/tty >/dev/tty 2>&1 ;;

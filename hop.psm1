@@ -301,8 +301,9 @@ hop --ssh-import [file] replace your ssh config from the clipboard, a file, or
 In the picker:
   tab / shift-tab   all, bookmarks, ssh hosts (or the categories, with one kind)
   type              filter, category names match too (`hop web` pre-types it)
-  enter             open the actions for it: go there, claude, edit, pull,
-                    push, pin. The first is the default, so enter twice goes there
+  enter             open the actions for it: go there, vscode, claude, edit,
+                    pull, push, pin. The first is the default, so enter twice
+                    goes there; for a host: connect, herdr, claude, edit, pin
   ^o                show or hide the preview
 
 Bookmarks: $env:APPDATA\hop\bookmarks (yours) merged over
@@ -362,31 +363,44 @@ if "%~1"=="ssh" (
 # enter opens a small menu of what to do with the entry, in the middle of the
 # screen, rather than a chord per action that nobody remembers. The first row
 # is the default, so enter twice takes you there and enter, down, enter
-# starts claude. `actions` and `ssh_actions` in the settings order the rows,
-# and drop any you never use. pull and push only appear for a git repo. The
-# menu runs after the picker has exited, in this process, so unlike tab it
-# needs no batch file.
+# opens the repo in vscode. `actions` and `ssh_actions` in the settings order
+# the rows, and drop any you never use. code, pull and push only appear for a
+# git repo; code also needs `code` on PATH. For a host the second row runs
+# herdr on the far side; `claude` is still an action, list it to get it back.
+# The menu runs after the picker has exited, in this process, so unlike tab
+# it needs no batch file.
 function Test-HopRepo([string]$dir) {
   if (-not (Get-Command git -ErrorAction SilentlyContinue)) { return $false }
   git -C $dir rev-parse --git-dir 2>$null | Out-Null
   return $LASTEXITCODE -eq 0
 }
 
+# What `code` opens: the one .code-workspace in the directory if there is
+# exactly one, so the folders and settings it carries come along, else the
+# directory itself. Two workspaces is a choice hop cannot make for you.
+function Get-HopCodeTarget([string]$dir) {
+  $ws = @(Get-ChildItem -LiteralPath $dir -Filter '*.code-workspace' -File -ErrorAction SilentlyContinue)
+  if ($ws.Count -eq 1) { return $ws[0].FullName }
+  return $dir
+}
+
 function Get-HopActionRows([string]$kind, [string]$dir, [bool]$pinned) {
   $e = [char]27
   $ed = if ($env:EDITOR) { $env:EDITOR } else { 'notepad' }
   $ed = [IO.Path]::GetFileNameWithoutExtension(($ed -split ' ')[0])
-  $list = if ($kind -eq 'ssh') { Get-HopSetting ssh_actions 'ssh claude edit pin' }
-          else                 { Get-HopSetting actions 'cd claude edit pull push pin' }
+  $list = if ($kind -eq 'ssh') { Get-HopSetting ssh_actions 'ssh herdr claude edit pin' }
+          else                 { Get-HopSetting actions 'cd code claude edit pull push pin' }
   $row = { param($name, $color, $desc) "$e[$($color)m{0,-7}$e[0m $e[2m{1}$e[0m`t{0}" -f $name, $desc }
   foreach ($a in (($list -replace ',', ' ') -split '\s+')) {
     switch ("$kind/$a") {
       'dir/cd'     { & $row cd     32 'go there' }
+      'dir/code'   { if ((Test-HopRepo $dir) -and (Get-Command code -ErrorAction SilentlyContinue)) { & $row code 35 'open in vscode' } }
       'dir/claude' { & $row claude 35 'start claude there' }
       'dir/edit'   { & $row edit   34 "open in $ed" }
       'dir/pull'   { if (Test-HopRepo $dir) { & $row pull 33 'git pull' } }
       'dir/push'   { if (Test-HopRepo $dir) { & $row push 33 'git push' } }
       'ssh/ssh'    { & $row ssh    32 'connect' }
+      'ssh/herdr'  { & $row herdr  35 'connect, then herdr' }
       'ssh/claude' { & $row claude 35 'connect, then claude' }
       'ssh/edit'   { & $row edit   34 'open the ssh config' }
       'dir/pin'    { if ($pinned) { & $row unpin 36 'off the top' } else { & $row pin 36 'keep at the top' } }
@@ -624,6 +638,7 @@ function hop {
   if ($kind -eq 'ssh') {
     switch ($act) {
       'ssh'    { & ssh $name }
+      'herdr'  { & ssh -t $name '$SHELL -lic herdr' }
       'claude' { & ssh -t $name '$SHELL -lic claude' }
       'edit'   { Invoke-HopEditor (Get-HopSshEditTarget (Get-HopSshConfigPath)) }
     }
@@ -632,6 +647,7 @@ function hop {
 
   Enter-HopDir $dir
   switch ($act) {
+    'code'   { code (Get-HopCodeTarget $dir) }
     'claude' { if (Get-Command claude -ErrorAction SilentlyContinue) { claude } else { Write-Host 'hop: claude is not on PATH' } }
     'edit'   { Invoke-HopEditor $target }
     'pull'   { git pull }
